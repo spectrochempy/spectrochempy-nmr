@@ -120,7 +120,7 @@ jobs:
     name: Publish to PyPI
     if: >-
       github.event_name == 'release' && github.event.action == 'published' &&
-      startsWith(github.ref_name, env.RELEASE_PREFIX)
+      startsWith(github.ref_name, 'spectrochempy-nmr-v')
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
