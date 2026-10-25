@@ -33,12 +33,8 @@ SpectroChemPy 1.0.0 should keep an earlier compatible version of this plugin.
 pip install spectrochempy[nmr]
 ```
 
-For development inside the SpectroChemPy repository:
-
-```bash
-pip install -e .
-pip install -e plugins/spectrochempy-nmr
-```
+For an editable development install from this repository, see
+[Development](#development).
 
 ## Usage
 

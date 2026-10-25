@@ -4,6 +4,10 @@ This repository is a candidate for the independent maintenance of the existing
 `spectrochempy-nmr` distribution. Package publication still belongs to the
 SpectroChemPy monorepo until the release handover is explicitly completed.
 
+The repository name uses an underscore (`spectrochempy_nmr`) for consistency
+with the organization's other workspaces. The distribution name remains
+`spectrochempy-nmr`; the import package is `spectrochempy_nmr`.
+
 ## Source mapping
 
 - Source repository: https://github.com/spectrochempy/spectrochempy
