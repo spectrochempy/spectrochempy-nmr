@@ -28,10 +28,15 @@ tests, examples, package version and vendored parsers match the source baseline.
 
 The pre-extraction detached Python 3.13 wheel baseline has 400 passing tests and
 94 warnings with the maintainer's external dataset corpus. The public CI builds
-sdist/wheel artifacts and runs synthetic tests on Python 3.11 and 3.13 against
-the pinned core baseline and its HyperComplex plugin. It is not a substitute for
-the complete real-data baseline. Dataset permissions and a pinned CI fixture
-manifest still require resolution.
+sdist/wheel artifacts once, verifies both notices and runtime file parity, then
+runs 70 synthetic tests on Python 3.11–3.13 against released core 1.1.0 (declared
+floor) and 1.1.3, plus one integration leg on Python 3.13 against the pinned core
+baseline and its HyperComplex plugin. It is not a substitute for the complete
+real-data baseline. Dataset permissions and a pinned CI fixture manifest still
+require resolution.
+
+Required status checks protect `master`; they cover artifact construction, the
+released-core compatibility matrix and the pinned-core integration leg.
 
 No PyPI/Conda publishing workflow is installed. Before publishing a new version,
 disable the monorepo's NMR publishing routes and old Trusted Publisher, then

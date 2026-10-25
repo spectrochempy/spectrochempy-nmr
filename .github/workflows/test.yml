@@ -6,35 +6,117 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Secure pip bootstrap
+        uses: spectrochempy/spectrochempy/.github/actions/verified-pip@cdb087a24f06b8c83ea91ea036192304db9329e3
+      - name: Build sdist and wheel from sdist
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check dist/*
+      - name: Verify packaged notices and runtime parity
+        run: |
+          python - <<'PY'
+          import sys
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          source = Path("src/spectrochempy_nmr")
+          notices = ("LICENSE", "NMRGLUE_LICENSE.rst")
+          wheel = next(Path("dist").glob("*.whl"))
+          sdist = next(Path("dist").glob("*.tar.gz"))
+
+          with zipfile.ZipFile(wheel) as archive:
+              for notice in notices:
+                  member = next(n for n in archive.namelist() if n.endswith("/" + notice))
+                  if archive.read(member) != Path(notice).read_bytes():
+                      sys.exit(f"wheel notice mismatch: {notice}")
+              packaged = sorted(
+                  name
+                  for name in archive.namelist()
+                  if name.startswith("spectrochempy_nmr/") and name.endswith(".py")
+              )
+              for name in packaged:
+                  local = source / name.split("spectrochempy_nmr/", 1)[1]
+                  if archive.read(name) != local.read_bytes():
+                      sys.exit(f"wheel runtime mismatch: {name}")
+
+          with tarfile.open(sdist) as archive:
+              for notice in notices:
+                  member = next(n for n in archive.getnames() if n.endswith("/" + notice))
+                  if archive.extractfile(member).read() != Path(notice).read_bytes():
+                      sys.exit(f"sdist notice mismatch: {notice}")
+
+          print(f"Verified both notices and {len(packaged)} runtime files")
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plugin-dist
+          path: dist/*
+          if-no-files-found: error
+
+  released-core:
+    needs: artifacts
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
+        # Declared floor and latest released 1.1.x; update deliberately.
+        spectrochempy-version: ["1.1.0", "1.1.3"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Checkout pinned core baseline
-        uses: actions/checkout@v7
+      - name: Secure pip bootstrap
+        uses: spectrochempy/spectrochempy/.github/actions/verified-pip@cdb087a24f06b8c83ea91ea036192304db9329e3
+      - uses: actions/download-artifact@v8
+        with:
+          name: plugin-dist
+          path: dist
+      - name: Install released core and candidate artifact
+        run: |
+          python -m pip install "spectrochempy==${{ matrix.spectrochempy-version }}" spectrochempy-hypercomplex pytest
+          python -m pip install dist/*.whl
+          python -m pip check
+      - name: Run synthetic tests against installed artifacts
+        run: |
+          python -I -m pytest -ra tests/test_linear_prediction.py tests/test_fft_encodings.py tests/test_fft_2d_characterization.py
+
+  pinned-core:
+    needs: artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/checkout@v7
         with:
           repository: spectrochempy/spectrochempy
           ref: cdb087a24f06b8c83ea91ea036192304db9329e3
           path: baseline-core
           fetch-depth: 0
       - name: Secure pip bootstrap
-        uses: ./baseline-core/.github/actions/verified-pip
-      - name: Build sdist and wheel from sdist
-        run: |
-          python -m pip install build twine pytest
-          python -m build
-          python -m twine check dist/*
-      - name: Install candidate and pinned core artifacts
+        uses: spectrochempy/spectrochempy/.github/actions/verified-pip@cdb087a24f06b8c83ea91ea036192304db9329e3
+      - uses: actions/download-artifact@v8
+        with:
+          name: plugin-dist
+          path: dist
+      - name: Build pinned core wheels
         run: |
           python -m pip wheel --no-deps --wheel-dir baseline-wheels ./baseline-core ./baseline-core/plugins/spectrochempy-hypercomplex
-          python -m pip install baseline-wheels/*.whl dist/*.whl
+      - name: Install pinned core and candidate artifact
+        run: |
+          python -m pip install baseline-wheels/*.whl dist/*.whl pytest
           python -m pip check
       - name: Run synthetic tests against installed artifacts
         run: |
