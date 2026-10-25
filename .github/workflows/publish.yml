@@ -64,6 +64,34 @@ jobs:
           python -m pip install --quiet dist/*.whl
           python -m pip check
           python -I -m pytest -q
+      - name: Verify artifact distribution metadata
+        run: |
+          python - <<'PY'
+          import email.parser
+          import os
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          expected = os.environ["DISTRIBUTION"]
+          wheel = next(Path("dist").glob("*.whl"))
+          sdist = next(Path("dist").glob("*.tar.gz"))
+          with zipfile.ZipFile(wheel) as archive:
+              member = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
+              metadata = email.parser.Parser().parsestr(archive.read(member).decode())
+          with tarfile.open(sdist) as archive:
+              member = next(name for name in archive.getnames() if name.endswith("/PKG-INFO"))
+              metadata_sdist = email.parser.Parser().parsestr(archive.extractfile(member).read().decode())
+          assert metadata["Name"] == expected
+          assert metadata_sdist["Name"] == expected
+          print(f"Verified distribution metadata: {expected}")
+          PY
+      - name: Test the built sdist in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/sdist-env"
+          "$RUNNER_TEMP/sdist-env/bin/python" -m pip install --quiet dist/*.tar.gz pytest pytest-doctestplus
+          "$RUNNER_TEMP/sdist-env/bin/python" -m pip check
+          "$RUNNER_TEMP/sdist-env/bin/python" -I -m pytest -q
       - uses: actions/upload-artifact@v7
         with:
           name: nmr-release-dist
@@ -72,7 +100,7 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to == 'testpypi' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'master' && inputs.publish_to == 'testpypi' }}
     needs: build
     runs-on: ubuntu-latest
     environment: testpypi
