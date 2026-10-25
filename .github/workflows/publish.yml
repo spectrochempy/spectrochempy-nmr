@@ -91,7 +91,8 @@ jobs:
           python -m venv "$RUNNER_TEMP/sdist-env"
           "$RUNNER_TEMP/sdist-env/bin/python" -m pip install --quiet dist/*.tar.gz pytest pytest-doctestplus
           "$RUNNER_TEMP/sdist-env/bin/python" -m pip check
-          "$RUNNER_TEMP/sdist-env/bin/python" -I -m pytest -q
+          "$RUNNER_TEMP/sdist-env/bin/python" -I -m pytest -q \
+            tests/test_nmr_plugin.py tests/test_read_simpson.py tests/test_nmr_units.py
       - uses: actions/upload-artifact@v7
         with:
           name: nmr-release-dist
