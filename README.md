@@ -2,6 +2,10 @@
 
 NMR plugin for SpectroChemPy.
 
+**Extraction candidate:** publication still belongs to the SpectroChemPy
+monorepo. See [EXTRACTION.md](EXTRACTION.md) for the pinned source, validation
+scope and remaining release/documentation handover.
+
 This package is the home for NMR-specific readers and tools that are useful in
 SpectroChemPy but should not live in the core package. It currently provides a
 validated public 1D workflow for reading data and processing raw 1D FIDs
