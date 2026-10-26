@@ -79,7 +79,7 @@ jobs:
           for package in "${packages[@]}"; do
             basename=$(basename "$package")
             case "$basename" in
-              "$DISTRIBUTION-${{ inputs.version }}-"*) ;;
+              "$DISTRIBUTION-$EXPECTED-"*) ;;
               *) echo "::error::Unexpected artifact: $package"; exit 1 ;;
             esac
           done
@@ -92,7 +92,7 @@ jobs:
 
   publish:
     name: Publish to Anaconda.org main
-    if: ${{ inputs.publish_to == 'main' }}
+    if: ${{ inputs.publish_to == 'main' && github.ref_name == 'master' }}
     needs: build
     runs-on: ubuntu-latest
     environment: conda
@@ -117,5 +117,5 @@ jobs:
           shopt -s nullglob globstar
           packages=(output/**/*.conda output/**/*.tar.bz2)
           for package in "${packages[@]}"; do
-            anaconda --token "$ANACONDA_API_TOKEN" upload --label main "$package"
+            anaconda --token "$ANACONDA_API_TOKEN" upload --user spectrocat --label main "$package"
           done
