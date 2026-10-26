@@ -39,7 +39,7 @@ about:
   license_file:
     - LICENSE
     - NMRGLUE_LICENSE.rst
-  repository: https://github.com/spectrochempy/spectrochempy
+  repository: https://github.com/spectrochempy/spectrochempy_nmr
 
 extra:
   recipe-maintainers:
