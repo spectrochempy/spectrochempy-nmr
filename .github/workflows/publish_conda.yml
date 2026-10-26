@@ -44,7 +44,15 @@ jobs:
           print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])
           PY
           )
-          recipe=$(sed -n 's/^  version: "\([^"]*\)"$/\1/p' recipe.yaml)
+          recipe=$(awk '
+            /^context:/ { in_context = 1; next }
+            in_context && /^  version:/ {
+              sub(/^  version: "/, "")
+              sub(/"$/, "")
+              print
+              exit
+            }
+          ' recipe.yaml)
           test "$EXPECTED" = "$actual" || {
             echo "::error::pyproject version $actual != requested version $EXPECTED"
             exit 1
