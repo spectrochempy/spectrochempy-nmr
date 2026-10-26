@@ -29,14 +29,14 @@ jobs:
   build:
     name: Build and validate Conda artifact
     runs-on: ubuntu-latest
+    env:
+      EXPECTED: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Validate requested version
-        env:
-          EXPECTED: ${{ inputs.version }}
         run: |
           set -euo pipefail
           actual=$(python - <<'PY'
@@ -92,7 +92,7 @@ jobs:
 
   publish:
     name: Publish to Anaconda.org main
-    if: ${{ inputs.publish_to == 'main' && github.ref_name == 'master' }}
+    if: ${{ inputs.publish_to == 'main' && github.ref == 'refs/heads/master' }}
     needs: build
     runs-on: ubuntu-latest
     environment: conda
