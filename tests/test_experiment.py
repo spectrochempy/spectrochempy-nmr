@@ -798,6 +798,87 @@ class TestProcessTimeDomain:
 class TestPublic1DMathConventions:
     """Numerically characterize the public 1D FFT and axis conventions."""
 
+    @pytest.mark.parametrize("pivot", [0.0, 3.5, 11.0])
+    def test_pk_complex_window_with_nonzero_pivot(self, pivot):
+        """Manual phasing applies the documented complex p0/p1 window."""
+        n = 32
+        index = np.arange(n, dtype=float)
+        data = np.exp(0.17j * index)
+        dataset = NDDataset(
+            data,
+            coordset=[Coord(index, units="Hz")],
+        )
+        dataset.meta.phc0 = [0.0 * ur.degree]
+        dataset.meta.phc1 = [0.0 * ur.degree]
+        dataset.meta.phased = [True]
+        dataset.meta.pivot = [0.0]
+        dataset.meta.exptc = [0.0 * ur.us]
+
+        result = dataset.pk(phc0=37.0, phc1=-83.0, pivot=pivot)
+        phase = np.deg2rad(37.0) + np.deg2rad(-83.0) * (index - pivot) / n
+        expected = data * np.exp(1j * phase)
+
+        np.testing.assert_allclose(result.data, expected, rtol=1e-13, atol=1e-13)
+        assert not np.allclose(result.data, data)
+
+    def test_pk_nonzero_pivot_is_invariant_to_dataset_transposition(self):
+        """Phasing a physical axis is independent of its array position."""
+        n = 32
+        index = np.arange(n, dtype=float)
+        data = np.vstack(
+            [
+                np.exp(0.11j * index),
+                0.7 * np.exp(-0.07j * index + 0.2j),
+                1.3 * np.exp(0.03j * index - 0.4j),
+            ]
+        )
+        dataset = NDDataset(
+            data,
+            coordset=[Coord.arange(3), Coord(index, units="Hz")],
+        )
+        dataset.meta.phc0 = [0.0 * ur.degree, 0.0 * ur.degree]
+        dataset.meta.phc1 = [0.0 * ur.degree, 0.0 * ur.degree]
+        dataset.meta.phased = [True, True]
+        dataset.meta.pivot = [0.0, 0.0]
+        dataset.meta.exptc = [0.0 * ur.us, 0.0 * ur.us]
+
+        direct = dataset.pk(phc0=21.0, phc1=64.0, pivot=9.0, dim="x")
+        transposed = dataset.T.pk(
+            phc0=21.0,
+            phc1=64.0,
+            pivot=9.0,
+            dim="x",
+        ).T
+
+        np.testing.assert_allclose(direct.data, transposed.data, rtol=1e-13, atol=1e-13)
+
+    @pytest.mark.parametrize("size", [64, 128, 256])
+    def test_fft_axis_documents_n_minus_one_display_grid(self, size):
+        """The plugin axis spans SW over N-1 display intervals explicitly."""
+        sw_hz = 6400.0
+        dataset = _make_synthetic_vendor_fid(
+            npts=32,
+            sw_hz=sw_hz,
+            obs_mhz=400.0,
+            freq_hz=500.0,
+        )
+        spectrum = Experiment(dataset).process(size=size)
+        axis_hz = np.asarray(spectrum.x.to("Hz").data)
+
+        np.testing.assert_allclose(
+            np.diff(axis_hz),
+            -sw_hz / (size - 1),
+            rtol=0,
+            atol=1e-3,
+        )
+        assert axis_hz[0] == pytest.approx(sw_hz / 2.0)
+        assert axis_hz[-1] == pytest.approx(-sw_hz / 2.0)
+
+        # NMRPipe's DFT-bin convention is retained as a separate documented
+        # reference; it is not forced to equal the endpoint-inclusive grid.
+        nmrpipe_bin_spacing = sw_hz / size
+        assert nmrpipe_bin_spacing != pytest.approx(sw_hz / (size - 1))
+
     def test_positive_frequency_peak_appears_on_positive_ppm_side(self):
         ds = _make_synthetic_vendor_fid(freq_hz=500.0)
         spectrum = Experiment(ds).process()
