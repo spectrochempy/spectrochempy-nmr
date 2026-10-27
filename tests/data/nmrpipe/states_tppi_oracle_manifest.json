@@ -1,0 +1,187 @@
+{
+  "nmrpipe": "13.0 Rev 2026.072.12.03 64-bit",
+  "binary": "nmrPipe/simTimeND (manual generation only)",
+  "encoding": {
+    "yMODE": "States-TPPI",
+    "yALT": 2,
+    "aq2D": "States"
+  },
+  "trace_order": "trace[2a]=RR+i*RI; trace[2a+1]=IR+i*II",
+  "pipeline": [
+    "simTimeND synthetic header profile",
+    "ZF -zf 1 -auto | FT -nodf",
+    "TP",
+    "ZF -zf 1 -auto | FT -alt"
+  ],
+  "signal": {
+    "f1_points": [
+      7.25,
+      -11.5,
+      13.5
+    ],
+    "f2_points": [
+      61.5,
+      137.25,
+      -83.75
+    ],
+    "amplitudes": [
+      1.0,
+      0.63,
+      0.41,
+      0.22
+    ],
+    "phases_rad": [
+      0.31,
+      -0.47,
+      0.83,
+      0.0
+    ],
+    "damping_points": [
+      [
+        45,
+        180
+      ],
+      [
+        27,
+        115
+      ],
+      [
+        38,
+        150
+      ]
+    ],
+    "noise": "none"
+  },
+  "conventions": {
+    "nmrpipe_final_storage": "[q0, q2, q1, q3] interleaving",
+    "decode": "conjugate final even/odd, transpose, reverse+roll F2, then [real, imag, real, imag]",
+    "plugin_order": [
+      "RR",
+      "RI",
+      "IR",
+      "II"
+    ]
+  },
+  "headers": {
+    "input": {
+      "FDDIMCOUNT": 2.0,
+      "FDTRANSPOSED": 0.0,
+      "FDSIZE": 256.0,
+      "FDSPECNUM": 64.0,
+      "FDF1TDSIZE": 32.0,
+      "FDF2TDSIZE": 256.0,
+      "FDF1FTSIZE": 0.0,
+      "FDF2FTSIZE": 0.0,
+      "FDF1QUADFLAG": 0.0,
+      "FDF2QUADFLAG": 0.0,
+      "FDF1AQSIGN": 2.0,
+      "FDF2AQSIGN": 0.0
+    },
+    "f2": {
+      "FDDIMCOUNT": 2.0,
+      "FDTRANSPOSED": 0.0,
+      "FDSIZE": 512.0,
+      "FDSPECNUM": 64.0,
+      "FDF1TDSIZE": 32.0,
+      "FDF2TDSIZE": 256.0,
+      "FDF1FTSIZE": 0.0,
+      "FDF2FTSIZE": 512.0,
+      "FDF1QUADFLAG": 0.0,
+      "FDF2QUADFLAG": 0.0,
+      "FDF1AQSIGN": 2.0,
+      "FDF2AQSIGN": 0.0
+    },
+    "tp": {
+      "FDDIMCOUNT": 2.0,
+      "FDTRANSPOSED": 1.0,
+      "FDSIZE": 32.0,
+      "FDSPECNUM": 1024.0,
+      "FDF1TDSIZE": 32.0,
+      "FDF2TDSIZE": 256.0,
+      "FDF1FTSIZE": 0.0,
+      "FDF2FTSIZE": 512.0,
+      "FDF1QUADFLAG": 0.0,
+      "FDF2QUADFLAG": 0.0,
+      "FDF1AQSIGN": 2.0,
+      "FDF2AQSIGN": 0.0
+    },
+    "final": {
+      "FDDIMCOUNT": 2.0,
+      "FDTRANSPOSED": 1.0,
+      "FDSIZE": 64.0,
+      "FDSPECNUM": 1024.0,
+      "FDF1TDSIZE": 32.0,
+      "FDF2TDSIZE": 256.0,
+      "FDF1FTSIZE": 64.0,
+      "FDF2FTSIZE": 512.0,
+      "FDF1QUADFLAG": 0.0,
+      "FDF2QUADFLAG": 0.0,
+      "FDF1AQSIGN": 0.0,
+      "FDF2AQSIGN": 0.0
+    }
+  },
+  "files": {
+    "input": {
+      "shape": [
+        64,
+        256
+      ],
+      "dtype": "complex64"
+    },
+    "f2": {
+      "shape": [
+        64,
+        512
+      ],
+      "dtype": "complex64"
+    },
+    "tp": {
+      "shape": [
+        1024,
+        32
+      ],
+      "dtype": "complex64"
+    },
+    "final": {
+      "shape": [
+        1024,
+        64
+      ],
+      "dtype": "complex64"
+    },
+    "input_components": {
+      "shape": [
+        32,
+        256,
+        4
+      ],
+      "dtype": "float32"
+    },
+    "f2_components": {
+      "shape": [
+        32,
+        512,
+        4
+      ],
+      "dtype": "float32"
+    },
+    "tp_cross": {
+      "shape": [
+        32,
+        512,
+        2
+      ],
+      "dtype": "complex64"
+    },
+    "final_components": {
+      "shape": [
+        64,
+        512,
+        4
+      ],
+      "dtype": "float32"
+    }
+  },
+  "fixture_sha256": "00f7b04006271b3f1a73977cdb1a0d4ce0c6f8269fa79d25c39193f1ff4bf29d",
+  "redistribution": "deterministic synthetic signal and NMRPipe checkpoints only"
+}
