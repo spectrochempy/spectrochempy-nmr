@@ -32,6 +32,8 @@ def _plain(value: Any) -> Any:
             return _plain(value.item())
         except ValueError:
             pass
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
@@ -116,6 +118,17 @@ def _integral_parameter(value: Any, name: str, blockers: list[str]) -> int | Non
     return int(value)
 
 
+def _finite_number(value: Any, name: str, blockers: list[str]) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        blockers.append(f"TopSpin processing parameter {name} must be numeric.")
+        return None
+    result = float(value)
+    if not math.isfinite(result):
+        blockers.append(f"TopSpin processing parameter {name} must be finite.")
+        return None
+    return result
+
+
 def build_topspin_1d_plan(
     *,
     processing: Mapping[str, Any] | None,
@@ -178,6 +191,31 @@ def build_topspin_1d_plan(
             "Source provenance is incomplete; no path or source files were supplied."
         )
 
+    effective_size = state_data.get("current_size")
+    iscomplex = state_data.get("iscomplex")
+    if effective_size is None:
+        tdeff = acquisition_data.get("TDeff", acquisition_data.get("TDEFF"))
+        td = acquisition_data.get("TD")
+        if tdeff is not None:
+            effective_size = tdeff
+            assumptions.append(
+                "TDeff is interpreted as the already normalized effective point count."
+            )
+        elif td is not None and isinstance(iscomplex, bool):
+            td_value = _integral_parameter(td, "TD", blockers)
+            if td_value is not None:
+                effective_size = td_value / 2.0 if iscomplex else td_value
+    if effective_size is None:
+        blockers.append(
+            "Effective input size is missing; provide current_size, TDeff, or TD with iscomplex."
+        )
+    else:
+        effective_size = _integral_parameter(effective_size, "effective_size", blockers)
+        if effective_size is not None and effective_size <= 0:
+            blockers.append("Effective input size must be positive.")
+    if not isinstance(iscomplex, bool):
+        blockers.append("The real/complex representation of the input is missing.")
+
     for name in sorted(set(processing_data) - known_parameters):
         unsupported.append(f"TopSpin processing parameter {name} is not interpreted.")
 
@@ -185,6 +223,12 @@ def build_topspin_1d_plan(
     si = _parameter(processing_data, "SI")
     if wdw is None:
         blockers.append("TopSpin processing parameter WDW is missing.")
+    elif isinstance(wdw, str):
+        if wdw.lower() not in {"em", "gm", "sine", "qsine"}:
+            blockers.append(f"Unsupported TopSpin window code WDW={wdw}.")
+            unsupported.append(f"TopSpin WDW={wdw} has no validated core mapping.")
+        else:
+            wdw = wdw.lower()
     else:
         wdw = _integral_parameter(wdw, "WDW", blockers)
     if si is None:
@@ -195,79 +239,97 @@ def build_topspin_1d_plan(
             blockers.append("TopSpin processing parameter SI must be positive.")
 
     if not blockers:
-        if wdw == 1:
+        if wdw in (1, "em"):
             lb = _parameter(processing_data, "LB")
             if lb is None:
                 blockers.append("EM interpretation requires TopSpin parameter LB.")
             else:
-                operations.append(
-                    PlanOperation(
-                        "em",
-                        {"lb": {"value": lb, "units": "Hz"}},
-                        ("WDW", "LB"),
-                        "TopSpin WDW=1 interpreted as exponential multiplication.",
+                lb = _finite_number(lb, "LB", blockers)
+                if lb is not None:
+                    operations.append(
+                        PlanOperation(
+                            "em",
+                            {"lb": {"value": lb, "units": "Hz"}},
+                            ("WDW", "LB"),
+                            "TopSpin WDW=1 interpreted as exponential multiplication.",
+                        )
                     )
-                )
-        elif wdw == 2:
+        elif wdw in (2, "gm"):
             lb = _parameter(processing_data, "LB")
             gb = _parameter(processing_data, "GB")
             if lb is None or gb is None:
                 blockers.append("GM interpretation requires both LB and GB.")
             else:
-                operations.append(
-                    PlanOperation(
-                        "gm",
-                        {
-                            "lb": {"value": lb, "units": "Hz"},
-                            "gb": {"value": gb, "units": "Hz"},
-                        },
-                        ("WDW", "LB", "GB"),
-                        "TopSpin WDW=2 interpreted as Lorentz-to-Gauss multiplication.",
-                    )
+                _finite_number(lb, "LB", blockers)
+                gb_value = _finite_number(gb, "GB", blockers)
+                if gb_value is not None and not 0.0 <= gb_value <= 1.0:
+                    blockers.append("TopSpin GB must be between 0 and 1.")
+                unsupported.append(
+                    "TopSpin GB is a dimensionless factor; no validated conversion to core gm(gb in Hz) exists."
                 )
-        elif wdw == 3:
+                warnings.append(
+                    "GM remains partial until the GB convention is mapped scientifically."
+                )
+        elif wdw in (3, "sine", "qsine"):
             ssb = _parameter(processing_data, "SSB")
             if ssb is None:
                 blockers.append("SP interpretation requires TopSpin parameter SSB.")
             else:
-                operations.append(
-                    PlanOperation(
-                        "sp",
-                        {"ssb": ssb},
-                        ("WDW", "SSB"),
-                        "TopSpin WDW=3 interpreted as sine-bell multiplication.",
-                    )
-                )
-                unsupported.append(
-                    "TopSpin sine-bell power is not independently sourced."
-                )
-                warnings.append(
-                    "SP plan is partial until the TopSpin power convention is explicit."
-                )
+                ssb_value = _finite_number(ssb, "SSB", blockers)
+                if ssb_value is not None and ssb_value < 0.0:
+                    blockers.append("TopSpin SSB must not be negative.")
+                if ssb_value is not None and not blockers:
+                    normalized_ssb = 1.0 if ssb_value < 2.0 else ssb_value
+                    power = 2 if wdw == "qsine" else 1 if wdw == "sine" else None
+                    if ssb_value != normalized_ssb:
+                        assumptions.append(
+                            f"TopSpin SSB={ssb_value:g} is normalized to core sp(ssb=1) per sinm/qsin documentation."
+                        )
+                    if power is None:
+                        unsupported.append(
+                            "Numeric WDW=3 does not identify sine versus squared-sine power."
+                        )
+                        warnings.append(
+                            "SP power remains unresolved for numeric WDW=3."
+                        )
+                    else:
+                        operations.append(
+                            PlanOperation(
+                                "sp",
+                                {"ssb": normalized_ssb, "pow": power},
+                                ("WDW", "SSB"),
+                                "TopSpin sine convention; sinm=pow 1 and qsin=pow 2; values below 2 are normalized to pure sine.",
+                            )
+                        )
         else:
             unsupported.append(f"TopSpin WDW={wdw} has no validated core mapping.")
             blockers.append(f"Unsupported TopSpin window code WDW={wdw}.")
 
         if not blockers:
-            operations.append(
-                PlanOperation(
-                    "zf_size",
-                    {"size": si},
-                    ("SI",),
-                    "TopSpin SI is interpreted as the requested processed size.",
+            if si < effective_size:
+                blockers.append(
+                    "SI is smaller than the effective input size; truncation is not zf_size."
                 )
-            )
-            fft_sources = ["SI"]
-            if _parameter(processing_data, "FT_mod") is not None:
-                fft_sources.append("FT_mod")
-            operations.append(
-                PlanOperation(
-                    "fft",
-                    {"size": si},
-                    tuple(fft_sources),
-                    "FFT direction is the time-to-frequency operation; FT_mod is retained, not replayed.",
+            else:
+                operations.append(
+                    PlanOperation(
+                        "zf_size",
+                        {"size": si},
+                        ("SI",),
+                        "TopSpin SI is interpreted as the requested processed size.",
+                    )
                 )
-            )
+                fft_sources = ["SI"]
+                if _parameter(processing_data, "FT_mod") is not None:
+                    fft_sources.append("FT_mod")
+                operations.append(
+                    PlanOperation(
+                        "fft",
+                        {"size": si},
+                        tuple(fft_sources),
+                        "FFT direction is the time-to-frequency operation; FT_mod is retained, not replayed.",
+                    )
+                )
 
     phc0 = _parameter(processing_data, "PHC0")
     phc1 = _parameter(processing_data, "PHC1")
@@ -285,6 +347,7 @@ def build_topspin_1d_plan(
         limitations.append(
             "FT_mod is recorded as provenance; it is not silently converted to an FFT variant."
         )
+        unsupported.append("FT_mod is not translated to a validated FFT convention.")
     if _parameter(processing_data, "NC_proc") is not None:
         unsupported.append(
             "NC_proc amplitude scaling is not included in the first plan."
