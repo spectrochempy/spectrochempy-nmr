@@ -30,3 +30,31 @@ corpora or generated binary outputs without a separate provenance and
 redistribution decision. The committed synthetic fixture is packaged
 separately as `tests/data/nmrpipe/qf_oracle.npz`; this helper intentionally
 does not overwrite that package or its manifest.
+
+## States-TPPI oracle
+
+`regenerate_states_tppi_oracle.py` generates a deterministic four-component
+States-TPPI signal and runs the manual NMRPipe 13.0 chain:
+
+```text
+simTimeND header profile with yMODE States-TPPI
+ZF -zf 1 -auto | FT -nodf
+TP
+ZF -zf 1 -auto | FT -alt
+```
+
+Example:
+
+```bash
+PYTHONPATH=/path/to/nmrglue-ng python \
+  tools/nmrpipe/regenerate_states_tppi_oracle.py \
+  /tmp/states-tppi-oracle \
+  --nmrpipe /home/christian/pipe/nmrbin.linux239_64/nmrPipe
+```
+
+The tool records NMRPipe storage checkpoints and a canonical component decode.
+The final NMRPipe interleaving is explicitly decoded as `[q0, q2, q1, q3]`,
+followed by conjugation, transpose, and the direct-dimension `reverse+roll`
+convention established by the QF campaign. No magnitude is used by the
+States-TPPI test. NMRPipe and the external nmrglue reader are manual-generation
+dependencies only; neither is required by runtime or CI.
