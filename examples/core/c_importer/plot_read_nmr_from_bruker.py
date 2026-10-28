@@ -13,7 +13,7 @@ In this example, we load a 1D Bruker TopSpin NMR dataset and inspect the raw
 FID with the public ``scp.nmr.read(...)`` API.
 
 Requires the official ``spectrochempy-nmr`` plugin.
-Install with: ``pip install spectrochempy[nmr]``.
+Install with: ``pip install "spectrochempy>=1.1.0,<2" "spectrochempy-nmr==0.2.0"``.
 
 """
 

@@ -1,0 +1,28 @@
+/* Small, documented branding overlay; it does not import core CSS. */
+:root {
+  --pst-color-primary: #0069d6;
+  --pst-color-primary-highlight: #074fb3;
+  --pst-color-link: #0069d6;
+  --pst-color-link-hover: #074fb3;
+}
+
+.bd-header {
+  background: #3486ba !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.bd-header a,
+.bd-header .theme-switch-button {
+  color: #fff !important;
+}
+
+.bd-header a:hover {
+  color: #ffd36d !important;
+}
+
+html[data-theme="dark"] {
+  --pst-color-primary: #5aa2f0;
+  --pst-color-primary-highlight: #8bbcff;
+  --pst-color-link: #74c0fc;
+  --pst-color-link-hover: #a5d8ff;
+}

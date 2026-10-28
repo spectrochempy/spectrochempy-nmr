@@ -37,7 +37,7 @@ It illustrates:
 * how to obtain a spectrum comparable to the processed ``2rr`` reference.
 
 Requires the official ``spectrochempy-nmr`` plugin.
-Install with: ``pip install spectrochempy[nmr]``.
+Install with: ``pip install "spectrochempy>=1.1.0,<2" "spectrochempy-nmr==0.2.0"``.
 """
 
 # %%
