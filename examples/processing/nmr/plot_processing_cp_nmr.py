@@ -23,7 +23,7 @@ CP-series follow-up, but it is not published while the public 1D example set is
 restricted to validated executable workflows.
 
 Requires the official ``spectrochempy-nmr`` plugin.
-Install with: ``pip install spectrochempy[nmr]``.
+Install with: ``pip install "spectrochempy>=1.1.0,<2" "spectrochempy-nmr==0.2.0"``.
 """
 
 # %%

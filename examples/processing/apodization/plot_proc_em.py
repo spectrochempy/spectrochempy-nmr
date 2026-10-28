@@ -13,7 +13,7 @@ Exponential window multiplication
 In this example, we perform exponential window multiplication to apodize a NMR signal in the time domain.
 
 Requires the official ``spectrochempy-nmr`` plugin.
-Install with: ``pip install spectrochempy[nmr]``.
+Install with: ``pip install "spectrochempy>=1.1.0,<2" "spectrochempy-nmr==0.2.0"``.
 
 """
 

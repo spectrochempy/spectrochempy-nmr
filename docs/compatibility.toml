@@ -1,0 +1,35 @@
+# Exact source and documentation inputs for the validated phase-1 prototype.
+# Release builds must replace these development checkout revisions explicitly.
+
+[site]
+package = "spectrochempy-nmr"
+version = "0.2.0"
+python = "3.13.13"
+core_docs_url = "https://www.spectrochempy.fr/latest/"
+
+[source.core]
+version = "1.1.4.dev21"
+commit = "cdb087a24f06b8c83ea91ea036192304db9329e3"
+repository = "https://github.com/spectrochempy/spectrochempy.git"
+resolution = "local-editable-checkout"
+
+[source.nmr]
+version = "0.2.0"
+commit = "1131deea84d03de820e6bdf554e103d3e69c5223"
+repository = "https://github.com/spectrochempy/spectrochempy_nmr.git"
+resolution = "local-editable-checkout"
+
+[source.hypercomplex]
+version = "0.2.0"
+commit = "b73067d72d41563afd3cadd2ea9e3e1c78ec4a2f"
+repository = "https://github.com/spectrochempy/spectrochempy_hypercomplex.git"
+resolution = "local-editable-checkout"
+
+[documentation]
+sphinx = "8.2.3"
+pydata_sphinx_theme = "0.20.0"
+sphinx_gallery = "0.19.0"
+numpydoc = "1.8.0"
+
+[audit]
+architecture_commit = "a5252471"

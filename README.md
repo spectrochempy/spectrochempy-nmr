@@ -30,7 +30,7 @@ SpectroChemPy 1.0.0 should keep an earlier compatible version of this plugin.
 
 
 ```bash
-pip install spectrochempy[nmr]
+pip install "spectrochempy>=1.1.0,<2" "spectrochempy-nmr==0.2.0"
 ```
 
 For an editable development install from this repository, see

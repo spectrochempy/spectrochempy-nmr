@@ -16,7 +16,7 @@ It also compares a simple public SpectroChemPy reconstruction of the raw
 TopSpin FID against the bundled TopSpin processed reference spectrum.
 
 Requires the official ``spectrochempy-nmr`` plugin.
-Install with: ``pip install spectrochempy[nmr]``.
+Install with: ``pip install "spectrochempy>=1.1.0,<2" "spectrochempy-nmr==0.2.0"``.
 """
 
 # %%

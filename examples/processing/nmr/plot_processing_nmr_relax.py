@@ -25,7 +25,7 @@ It does not claim replay of vendor processing, nor exact equivalence with the
 TopSpin fitting tools bundled alongside the dataset.
 
 Requires the official ``spectrochempy-nmr`` plugin.
-Install with: ``pip install spectrochempy[nmr]``.
+Install with: ``pip install "spectrochempy>=1.1.0,<2" "spectrochempy-nmr==0.2.0"``.
 """
 
 # %%

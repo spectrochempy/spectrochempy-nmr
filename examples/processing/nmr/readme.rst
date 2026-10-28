@@ -11,7 +11,7 @@ NMR processing (plugin-based)
 
     .. code-block:: bash
 
-        pip install spectrochempy[nmr]
+        pip install "spectrochempy>=1.1.0,<2" "spectrochempy-nmr==0.2.0"
 
     See :ref:`plugins` for more information.
 
