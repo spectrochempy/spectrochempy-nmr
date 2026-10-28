@@ -1,0 +1,144 @@
+name: Build and publish Conda package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version to build"
+        required: true
+        default: "0.2.0"
+        type: string
+      publish_to:
+        description: "Optional Anaconda.org publication"
+        required: true
+        default: none
+        type: choice
+        options: [none, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conda-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DISTRIBUTION: spectrochempy-nmr
+  RELEASE_PREFIX: spectrochempy-nmr-v
+
+jobs:
+  build:
+    name: Build and validate Conda artifact
+    runs-on: ubuntu-latest
+    env:
+      DISPATCH_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate requested version
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            case "$GITHUB_REF_NAME" in
+              "$RELEASE_PREFIX"*) EXPECTED="${GITHUB_REF_NAME#${RELEASE_PREFIX}}" ;;
+              *) echo "::error::release tag $GITHUB_REF_NAME does not match $RELEASE_PREFIX"; exit 1 ;;
+            esac
+          else
+            EXPECTED="$DISPATCH_VERSION"
+          fi
+          test -n "$EXPECTED" || { echo "::error::No expected version provided"; exit 1; }
+          echo "EXPECTED=$EXPECTED" >> "$GITHUB_ENV"
+          actual=$(python - <<'PY'
+          import tomllib
+          print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])
+          PY
+          )
+          recipe=$(awk '
+            /^context:/ { in_context = 1; next }
+            in_context && /^  version:/ {
+              sub(/^  version: "/, "")
+              sub(/"$/, "")
+              print
+              exit
+            }
+          ' recipe.yaml)
+          test "$EXPECTED" = "$actual" || {
+            echo "::error::pyproject version $actual != requested version $EXPECTED"
+            exit 1
+          }
+          test "$EXPECTED" = "$recipe" || {
+            echo "::error::recipe version $recipe != requested version $EXPECTED"
+            exit 1
+          }
+
+      - name: Build Conda package
+        uses: prefix-dev/rattler-build-action@v0.2.39
+        env:
+          CONDA_BLD_PATH: ../output
+        with:
+          rattler-build-version: v0.77.0
+          recipe-path: recipe.yaml
+          upload-artifact: false
+          build-args: >-
+            -c spectrocat
+            -c conda-forge
+
+      - name: Move and verify artifact
+        run: |
+          set -euo pipefail
+          mv ../output .
+          shopt -s nullglob globstar
+          packages=(output/**/*.conda output/**/*.tar.bz2)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "::error::No Conda artifact was produced"
+            exit 1
+          fi
+          for package in "${packages[@]}"; do
+            basename=$(basename "$package")
+            case "$basename" in
+              "$DISTRIBUTION-$EXPECTED-"*) ;;
+              *) echo "::error::Unexpected artifact: $package"; exit 1 ;;
+            esac
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: conda-dist
+          path: output/**/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish to Anaconda.org main
+    if: >-
+      (github.event_name == 'release' && startsWith(github.ref_name, 'spectrochempy-nmr-v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_to == 'main' && github.ref == 'refs/heads/master')
+    needs: build
+    runs-on: ubuntu-latest
+    environment: conda
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: conda-dist
+          path: output
+
+      - name: Install Anaconda client
+        run: python -m pip install --disable-pip-version-check "anaconda-client==1.13.0"
+
+      - name: Publish immutable artifacts
+        env:
+          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${ANACONDA_API_TOKEN:-}" || {
+            echo "::error::ANACONDA_API_TOKEN is not set"
+            exit 1
+          }
+          shopt -s nullglob globstar
+          packages=(output/**/*.conda output/**/*.tar.bz2)
+          for package in "${packages[@]}"; do
+            anaconda --token "$ANACONDA_API_TOKEN" upload --user spectrocat --label main "$package"
+          done

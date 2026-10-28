@@ -1,0 +1,77 @@
+{
+  "nmrpipe": "13.0 Rev 2026.072.12.03 64-bit",
+  "binary": "nmrPipe (NMRBIN nmrbin.linux239_64)",
+  "profile_source": "bruk2pipe magnitude profile; synthetic data generated independently and reduced with NMRPipe EXT",
+  "synthetic_signal": {
+    "components": [
+      {
+        "amplitude": 1.0,
+        "damping_f2": 12.0,
+        "damping_f1": 8.0,
+        "frequency_f2_hz": 1700.0,
+        "frequency_f1_hz": 530.0,
+        "phase_rad": 0.12
+      },
+      {
+        "amplitude": 0.55,
+        "damping_f2": 5.0,
+        "damping_f1": 4.0,
+        "frequency_f2_hz": 2600.0,
+        "frequency_f1_hz": -710.0,
+        "phase_rad": -0.27
+      }
+    ],
+    "sampling_f2_s": 0.0001,
+    "sampling_f1_s": 0.0003125,
+    "noise": "none"
+  },
+  "input_dimensions_before_ext": [128, 1024],
+  "ext": "-x1 0% -xn 25% -y1 0% -yn 25%",
+  "pipeline": [
+    "bruk2pipe profile -> synthetic full input",
+    "EXT -x1 0% -xn 25% -y1 0% -yn 25%",
+    "ZF -zf 1 -auto | FT -nodf",
+    "TP",
+    "ZF -zf 1 -auto | FT -neg",
+    "MC | TP"
+  ],
+  "files": {
+    "input": {
+      "shape": [
+        33,
+        257
+      ],
+      "dtype": "complex64"
+    },
+    "f2": {
+      "shape": [
+        33,
+        1024
+      ],
+      "dtype": "complex64"
+    },
+    "f2tp": {
+      "shape": [
+        1024,
+        33
+      ],
+      "dtype": "complex64"
+    },
+    "f1": {
+      "shape": [
+        1024,
+        128
+      ],
+      "dtype": "complex64"
+    },
+    "magnitude": {
+      "shape": [
+        128,
+        1024
+      ],
+      "dtype": "float32"
+    }
+  },
+  "fixture_sha256": "6fa58eb7ea7cbf134480336746d29146465698977cf472850332ebed1b0f26fb",
+  "redistribution": "synthetic payload and NMRPipe-generated checkpoints only; no experimental sample data"
+}

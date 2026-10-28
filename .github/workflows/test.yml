@@ -89,7 +89,7 @@ jobs:
           python -m pip check
       - name: Run synthetic tests against installed artifacts
         run: |
-          python -I -m pytest -ra tests/test_linear_prediction.py tests/test_fft_encodings.py tests/test_fft_2d_characterization.py
+          python -I -m pytest -ra tests/test_linear_prediction.py tests/test_fft_encodings.py tests/test_fft_2d_characterization.py tests/test_nmrpipe_oracle_conventions.py
 
   pinned-core:
     needs: artifacts
@@ -113,11 +113,11 @@ jobs:
           path: dist
       - name: Build pinned core wheels
         run: |
-          python -m pip wheel --no-deps --wheel-dir baseline-wheels ./baseline-core ./baseline-core/plugins/spectrochempy-hypercomplex
+          python -m pip wheel --no-deps --wheel-dir baseline-wheels ./baseline-core
       - name: Install pinned core and candidate artifact
         run: |
-          python -m pip install baseline-wheels/*.whl dist/*.whl pytest
+          python -m pip install baseline-wheels/*.whl dist/*.whl spectrochempy-hypercomplex pytest
           python -m pip check
       - name: Run synthetic tests against installed artifacts
         run: |
-          python -I -m pytest -ra tests/test_linear_prediction.py tests/test_fft_encodings.py tests/test_fft_2d_characterization.py
+          python -I -m pytest -ra tests/test_linear_prediction.py tests/test_fft_encodings.py tests/test_fft_2d_characterization.py tests/test_nmrpipe_oracle_conventions.py
