@@ -111,6 +111,35 @@ def _extract_procpar_string(pdic, key, default=None):
     return values[0] if values else default
 
 
+def _extract_procpar_values(pdic, key):
+    """Extract a procpar value list, treating malformed values as empty."""
+    try:
+        values = pdic.get(key, {}).get("values", [])
+    except (AttributeError, TypeError):
+        return []
+    return values if isinstance(values, (list, tuple)) else []
+
+
+def _extract_procpar_integer(pdic, key, default=None):
+    """Extract a finite integer procpar value without truncation."""
+    try:
+        values = pdic.get(key, {}).get("values", [])
+        if not isinstance(values, (list, tuple)) or len(values) != 1:
+            return default
+        value = values[0]
+        if isinstance(value, (list, tuple, np.ndarray)):
+            return default
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return default
+    try:
+        value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if not np.isfinite(value) or not value.is_integer():
+        return default
+    return int(value)
+
+
 def _detect_agilent_encoding(pdic, ndim):
     """
     Detect the quadrature encoding for each dimension from procpar.
@@ -123,15 +152,15 @@ def _detect_agilent_encoding(pdic, ndim):
     encodings = []
 
     # Direct dimension: check if data is complex
-    np_val = _extract_procpar_value(pdic, "np", 0)
-    is_direct_complex = int(np_val) % 2 == 0 and int(np_val) > 0
+    np_val = _extract_procpar_integer(pdic, "np")
+    is_direct_complex = np_val is not None and np_val % 2 == 0 and np_val > 0
     encodings.append("QF" if not is_direct_complex else "QSIM")
 
     # Indirect dimensions
     phase_keys = ["phase", "phase2", "phase3"]
     for i in range(ndim - 1):
         if i < len(phase_keys):
-            phase_vals = pdic.get(phase_keys[i], {}).get("values", [])
+            phase_vals = _extract_procpar_values(pdic, phase_keys[i])
             if len(phase_vals) >= 2:
                 encodings.append("STATES")
             elif len(phase_vals) == 1:
@@ -142,6 +171,126 @@ def _detect_agilent_encoding(pdic, ndim):
             encodings.append("QF")
 
     return tuple(encodings)
+
+
+def _has_unvalidated_states_phase(pdic):
+    """Return whether a 2D phase field needs an explicit States diagnostic."""
+    if "phase" not in pdic:
+        ni = _extract_procpar_integer(pdic, "ni")
+        arraydim = _extract_procpar_integer(pdic, "arraydim")
+        return ni is not None and arraydim == 2 * ni
+    phase_entry = pdic["phase"]
+    if not isinstance(phase_entry, dict) or "values" not in phase_entry:
+        return True
+    phase_values = phase_entry["values"]
+    if not isinstance(phase_values, (list, tuple)):
+        return True
+    if len(phase_values) == 0 or len(phase_values) >= 2:
+        return True
+    if isinstance(phase_values[0], (list, tuple, np.ndarray)):
+        return True
+    try:
+        value = float(phase_values[0])
+    except (TypeError, ValueError):
+        return True
+    return not np.isfinite(value) or not value.is_integer()
+
+
+def _reconstruct_agilent_states(data):
+    """Build a quaternion array from successive Agilent States traces.
+
+    Agilent ``phase=1,2`` acquisitions store the two indirect-quadrature
+    branches as successive traces for each indirect increment.  The direct
+    complex dimension must therefore remain intact while the trace dimension
+    is paired.
+
+    Parameters
+    ----------
+    data : ndarray
+        Two-dimensional complex FID data with an even number of traces.
+
+    Returns
+    -------
+    ndarray
+        Quaternion data with shape ``(data.shape[0] // 2, data.shape[1])``.
+
+    Raises
+    ------
+    ValueError
+        If the data is not two-dimensional or has an odd number of traces.
+    ImportError
+        If the optional hypercomplex plugin is unavailable.
+    """
+    if data.ndim != 2:
+        raise ValueError("Agilent 2D States data must be two-dimensional")
+    if data.shape[0] % 2:
+        raise ValueError("Agilent 2D States data requires paired traces")
+
+    try:
+        from spectrochempy_hypercomplex import as_quaternion  # noqa: PLC0415
+    except ModuleNotFoundError:
+        msg = (
+            "2D hypercomplex NMR data requires the spectrochempy-hypercomplex "
+            "plugin. Install it with: pip install spectrochempy-hypercomplex"
+        )
+        raise ImportError(msg) from None
+
+    return as_quaternion(data[0::2], data[1::2])
+
+
+def _validate_agilent_states_profile(pdic, dic, data):
+    """Validate the Agilent 2D States profile before row reconstruction.
+
+    The row-pairing convention is established only for the standard
+    ``phase=1,2`` acquisition with ``arraydim=2*ni`` and one trace per block.
+    Return a reason instead of guessing when the procpar or binary dimensions
+    describe another acquisition.
+    """
+    if data.ndim != 2:
+        return False, f"expected 2D data, received {data.ndim}D"
+
+    phase_values = _extract_procpar_values(pdic, "phase")
+
+    def _finite_integer_value(value):
+        if isinstance(value, (list, tuple, np.ndarray)):
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not np.isfinite(value) or not value.is_integer():
+            return None
+        return int(value)
+
+    phase = [_finite_integer_value(value) for value in phase_values]
+    if any(value is None for value in phase):
+        return False, f"unsupported phase values {phase_values!r}"
+    if phase != [1, 2]:
+        return False, f"expected phase=[1, 2], received {phase_values!r}"
+
+    ni = _extract_procpar_integer(pdic, "ni")
+    arraydim = _extract_procpar_integer(pdic, "arraydim")
+    np_raw = _extract_procpar_integer(pdic, "np")
+    if ni is None or arraydim is None or np_raw is None:
+        return False, "ni, arraydim and np must be finite integers"
+
+    expected_traces = 2 * ni
+    if ni <= 0 or arraydim != expected_traces:
+        return False, f"expected arraydim=2*ni, received arraydim={arraydim}, ni={ni}"
+    if data.shape[0] != expected_traces:
+        return False, (
+            f"expected {expected_traces} traces from 2*ni, received {data.shape[0]}"
+        )
+    if np_raw <= 0 or np_raw % 2 or data.shape[1] != np_raw // 2:
+        return False, f"np={np_raw} is inconsistent with data shape {data.shape}"
+    if "ntraces" not in dic:
+        return False, "missing ntraces metadata"
+    if isinstance(dic["ntraces"], (list, tuple, np.ndarray)):
+        return False, "ntraces must be a scalar integer"
+    if not isinstance(dic["ntraces"], (int, np.integer)) or dic["ntraces"] != 1:
+        return False, f"expected ntraces=1, received {dic['ntraces']}"
+
+    return True, None
 
 
 # ======================================================================================
@@ -303,7 +452,8 @@ def _read_agilent(*args, **kwargs):
     meta.dfrq[-1] = _extract_procpar_value(pdic, "dfrq")
     nuc = _extract_procpar_string(pdic, "dn") or _extract_procpar_string(pdic, "tn")
     meta.nucleus[-1] = nuc
-    meta.iscomplex[-1] = int(_extract_procpar_value(pdic, "np", 0)) % 2 == 0
+    np_value = _extract_procpar_integer(pdic, "np")
+    meta.iscomplex[-1] = np_value is not None and np_value % 2 == 0 and np_value > 0
 
     # Spectrometer frequency for direct dim: prefer sfrq, fallback to dfrq
     if meta.sfrq[-1] is None:
@@ -341,7 +491,7 @@ def _read_agilent(*args, **kwargs):
         meta.nucleus[dim_idx] = nuc
 
         # Indirect dimensions are complex if phase array has 2+ values
-        phase_vals = pdic.get(phase_key, {}).get("values", [])
+        phase_vals = _extract_procpar_values(pdic, phase_key)
         meta.iscomplex[dim_idx] = len(phase_vals) >= 2
 
     # Compute spectral width in Hz (already in Hz for Agilent)
@@ -429,8 +579,35 @@ def _read_agilent(*args, **kwargs):
     # Set data
     dataset.data = data
 
-    # Apply quaternion encoding for 2D hypercomplex data
-    if ndim >= 2 and meta.iscomplex[-2]:
+    # Agilent States stores the two indirect branches as successive traces.
+    # Do not use the generic setter here: it pairs adjacent direct samples,
+    # which is correct for its generic contract but not for this acquisition
+    # layout.  Other Agilent encodings remain on their existing paths until
+    # their storage conventions are independently established.
+    if ndim == 2 and (
+        meta.encoding[-1] == "STATES" or _has_unvalidated_states_phase(pdic)
+    ):
+        supported, reason = _validate_agilent_states_profile(pdic, dic, data)
+        if not supported:
+            warning_(
+                "Agilent States quaternion reconstruction skipped for an "
+                f"unvalidated acquisition: {reason}",
+                stacklevel=2,
+            )
+        else:
+            try:
+                dataset.data = _reconstruct_agilent_states(dataset.data)
+                meta.td = list(dataset.data.shape)
+                coords = [_make_coord(axis, size) for axis, size in enumerate(meta.td)]
+            except (AttributeError, ImportError) as exc:
+                warning_(
+                    f"Agilent States quaternion reconstruction unavailable: {exc}",
+                    stacklevel=2,
+                )
+    elif ndim >= 2 and meta.iscomplex[-2]:
+        # Preserve the historical generic conversion for unvalidated Agilent
+        # layouts (including 3D and TPPI).  Their storage conventions are not
+        # interchangeable with the documented 2D States layout above.
         try:
             dataset.hyper.set_quaternion(inplace=True)
             meta.td[-1] = dataset.data.shape[-1]
