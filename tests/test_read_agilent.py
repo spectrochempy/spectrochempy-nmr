@@ -12,6 +12,9 @@ import pytest
 from spectrochempy_nmr.nmr_metadata import NMRMetadata
 from spectrochempy_nmr.nmr_metadata import extract_agilent_metadata
 from spectrochempy_nmr.readers.read_agilent import _reconstruct_agilent_states
+from spectrochempy_nmr.readers.read_agilent import _detect_agilent_encoding
+from spectrochempy_nmr.readers.read_agilent import _has_unvalidated_states_phase
+from spectrochempy_nmr.readers.read_agilent import _validate_agilent_states_profile
 
 import spectrochempy as scp
 
@@ -241,6 +244,145 @@ class TestAgilentStatesReconstruction:
     def test_odd_trace_count_is_rejected_without_pairing(self):
         with pytest.raises(ValueError, match="paired traces"):
             _reconstruct_agilent_states(np.zeros((3, 4), dtype=np.complex128))
+
+    @staticmethod
+    def _profile(*, phase=("1", "2"), ni="2", arraydim="4", np_raw="6", ntraces=1):
+        phase_values = list(phase) if isinstance(phase, (list, tuple)) else phase
+        pdic = {
+            "phase": {"values": phase_values},
+            "ni": {"values": [ni]},
+            "arraydim": {"values": [arraydim]},
+            "np": {"values": [np_raw]},
+        }
+        dic = {} if ntraces is None else {"ntraces": ntraces}
+        return pdic, dic
+
+    def test_validates_only_the_established_two_trace_profile(self):
+        pdic, dic = self._profile()
+        supported, reason = _validate_agilent_states_profile(
+            pdic, dic, np.zeros((4, 3), dtype=np.complex128)
+        )
+        assert supported is True
+        assert reason is None
+
+    @pytest.mark.parametrize("np_value", ["inf", "2.5", "not-a-number"])
+    def test_malformed_direct_np_does_not_crash_encoding_detection(self, np_value):
+        pdic = {"np": {"values": [np_value]}, "phase": {"values": ["1", "2"]}}
+        assert _detect_agilent_encoding(pdic, 2) == ("QF", "STATES")
+
+    @pytest.mark.parametrize("phase_values", [None, "1,2"])
+    def test_malformed_phase_values_do_not_crash_encoding_detection(self, phase_values):
+        pdic = {"np": {"values": ["3000"]}, "phase": {"values": phase_values}}
+        assert _detect_agilent_encoding(pdic, 2) == ("QSIM", "QF")
+
+    @pytest.mark.parametrize(
+        "phase_entry",
+        [
+            {"values": None},
+            {"values": "1,2"},
+            {"values": []},
+            {"values": ["1.5"]},
+            {"values": ["inf"]},
+            {"values": ["1", "2", "3"]},
+        ],
+    )
+    def test_marks_unvalidated_phase_metadata_for_reader_diagnostic(self, phase_entry):
+        assert _has_unvalidated_states_phase({"phase": phase_entry}) is True
+
+    def test_does_not_mark_missing_or_single_phase_as_states_candidate(self):
+        assert _has_unvalidated_states_phase({}) is False
+        assert (
+            _has_unvalidated_states_phase(
+                {"ni": {"values": ["2"]}, "arraydim": {"values": ["4"]}}
+            )
+            is True
+        )
+        assert _has_unvalidated_states_phase({"phase": {"values": ["3"]}}) is False
+
+    def test_rejects_non_scalar_numeric_procpar_values(self):
+        pdic, dic = self._profile()
+        pdic["ni"] = {"values": np.array([2, 3])}
+        supported, reason = _validate_agilent_states_profile(
+            pdic, dic, np.zeros((4, 3), dtype=np.complex128)
+        )
+        assert supported is False
+        assert "finite integers" in reason
+
+    @pytest.mark.parametrize(
+        "phase_values",
+        [None, "1,2", [], ["1.5"], ["inf"], ["1", "2", "3"]],
+    )
+    def test_public_reader_warns_and_preserves_invalid_states(
+        self, tmp_path, monkeypatch, phase_values
+    ):
+        from importlib import import_module
+
+        reader = import_module("spectrochempy_nmr.readers.read_agilent")
+        data_dir = tmp_path / "invalid_states"
+        data_dir.mkdir()
+        fid_path = data_dir / "fid"
+        (data_dir / "procpar").touch()
+        fid_path.touch()
+
+        pdic, _ = self._profile(phase=phase_values, ntraces=1)
+        fake_dic = {"procpar": pdic, "ntraces": 1, "np": 6}
+        raw = np.arange(12, dtype=np.float64).reshape(4, 3).astype(np.complex128)
+        monkeypatch.setattr(
+            reader, "read_varian", lambda *args, **kwargs: (fake_dic, raw)
+        )
+
+        with pytest.warns(UserWarning, match="unvalidated acquisition"):
+            dataset = reader._read_agilent(scp.NDDataset(), fid_path)
+
+        assert dataset.data.shape == raw.shape
+
+    def test_public_reader_reconstructs_only_valid_states_profile(
+        self, tmp_path, monkeypatch
+    ):
+        pytest.importorskip("spectrochempy_hypercomplex")
+        from importlib import import_module
+
+        reader = import_module("spectrochempy_nmr.readers.read_agilent")
+        data_dir = tmp_path / "valid_states"
+        data_dir.mkdir()
+        fid_path = data_dir / "fid"
+        (data_dir / "procpar").touch()
+        fid_path.touch()
+
+        pdic, _ = self._profile(ntraces=1)
+        fake_dic = {"procpar": pdic, "ntraces": 1, "np": 6}
+        raw = np.arange(12, dtype=np.float64).reshape(4, 3).astype(np.complex128)
+        monkeypatch.setattr(
+            reader, "read_varian", lambda *args, **kwargs: (fake_dic, raw)
+        )
+
+        dataset = reader._read_agilent(scp.NDDataset(), fid_path)
+
+        assert dataset.data.shape == (2, 3)
+
+    @pytest.mark.parametrize(
+        ("profile", "shape", "message"),
+        [
+            ({"phase": ("1", "2", "3")}, (4, 3), "phase"),
+            ({"arraydim": "6"}, (4, 3), "arraydim"),
+            ({}, (3, 3), "traces"),
+            ({"ntraces": 2}, (4, 3), "ntraces"),
+            ({"ni": "2.5"}, (4, 3), "finite integers"),
+            ({"np_raw": "inf"}, (4, 3), "finite integers"),
+            ({"phase": ("1.5", "2")}, (4, 3), "phase"),
+            ({"phase": ("inf", "2")}, (4, 3), "phase"),
+            ({"ntraces": None}, (4, 3), "missing ntraces"),
+            ({"ntraces": np.array([1, 2])}, (4, 3), "ntraces"),
+            ({"phase": (np.array(1), np.array(2))}, (4, 3), "phase"),
+        ],
+    )
+    def test_rejects_unvalidated_states_profiles(self, profile, shape, message):
+        pdic, dic = self._profile(**profile)
+        supported, reason = _validate_agilent_states_profile(
+            pdic, dic, np.zeros(shape, dtype=np.complex128)
+        )
+        assert supported is False
+        assert message in reason
 
 
 # ---------------------------------------------------------------------------
