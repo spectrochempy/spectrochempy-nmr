@@ -144,6 +144,48 @@ def _detect_agilent_encoding(pdic, ndim):
     return tuple(encodings)
 
 
+def _reconstruct_agilent_states(data):
+    """Build a quaternion array from successive Agilent States traces.
+
+    Agilent ``phase=1,2`` acquisitions store the two indirect-quadrature
+    branches as successive traces for each indirect increment.  The direct
+    complex dimension must therefore remain intact while the trace dimension
+    is paired.
+
+    Parameters
+    ----------
+    data : ndarray
+        Two-dimensional complex FID data with an even number of traces.
+
+    Returns
+    -------
+    ndarray
+        Quaternion data with shape ``(data.shape[0] // 2, data.shape[1])``.
+
+    Raises
+    ------
+    ValueError
+        If the data is not two-dimensional or has an odd number of traces.
+    ImportError
+        If the optional hypercomplex plugin is unavailable.
+    """
+    if data.ndim != 2:
+        raise ValueError("Agilent 2D States data must be two-dimensional")
+    if data.shape[0] % 2:
+        raise ValueError("Agilent 2D States data requires paired traces")
+
+    try:
+        from spectrochempy_hypercomplex import as_quaternion  # noqa: PLC0415
+    except ModuleNotFoundError:
+        msg = (
+            "2D hypercomplex NMR data requires the spectrochempy-hypercomplex "
+            "plugin. Install it with: pip install spectrochempy-hypercomplex"
+        )
+        raise ImportError(msg) from None
+
+    return as_quaternion(data[0::2], data[1::2])
+
+
 # ======================================================================================
 # Public entry point
 # ======================================================================================
@@ -429,8 +471,25 @@ def _read_agilent(*args, **kwargs):
     # Set data
     dataset.data = data
 
-    # Apply quaternion encoding for 2D hypercomplex data
-    if ndim >= 2 and meta.iscomplex[-2]:
+    # Agilent States stores the two indirect branches as successive traces.
+    # Do not use the generic setter here: it pairs adjacent direct samples,
+    # which is correct for its generic contract but not for this acquisition
+    # layout.  Other Agilent encodings remain on their existing paths until
+    # their storage conventions are independently established.
+    if ndim == 2 and meta.encoding[-1] == "STATES":
+        try:
+            dataset.data = _reconstruct_agilent_states(dataset.data)
+            meta.td = list(dataset.data.shape)
+            coords = [_make_coord(axis, size) for axis, size in enumerate(meta.td)]
+        except (AttributeError, ImportError) as exc:
+            warning_(
+                f"Agilent States quaternion reconstruction unavailable: {exc}",
+                stacklevel=2,
+            )
+    elif ndim >= 2 and meta.iscomplex[-2]:
+        # Preserve the historical generic conversion for unvalidated Agilent
+        # layouts (including 3D and TPPI).  Their storage conventions are not
+        # interchangeable with the documented 2D States layout above.
         try:
             dataset.hyper.set_quaternion(inplace=True)
             meta.td[-1] = dataset.data.shape[-1]

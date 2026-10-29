@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from spectrochempy_nmr.nmr_metadata import NMRMetadata
 from spectrochempy_nmr.nmr_metadata import extract_agilent_metadata
+from spectrochempy_nmr.readers.read_agilent import _reconstruct_agilent_states
 
 import spectrochempy as scp
 
@@ -136,9 +137,14 @@ class TestReadAgilent:
         assert ds.origin == "agilent"
 
     def test_read_2d_fid(self):
+        pytest.importorskip("spectrochempy_hypercomplex")
         ds = _read_agilent_or_skip(str(AGILENT_DIR / "agilent_2d" / "fid"))
         assert ds.ndim == 2
         assert ds.origin == "agilent"
+        assert ds.data.shape == (166, 1500)
+        assert ds.meta.td == [166, 1500]
+        assert ds.x.size == 1500
+        assert ds.y.size == 166
 
     def test_read_2d_tppi(self):
         ds = _read_agilent_or_skip(str(AGILENT_DIR / "agilent_2d_tppi" / "fid"))
@@ -199,6 +205,42 @@ class TestReadAgilent:
     def test_meta_readonly(self):
         ds = _read_agilent_or_skip(str(AGILENT_DIR / "agilent_1d" / "fid"))
         assert ds.meta.readonly is True
+
+
+class TestAgilentStatesReconstruction:
+    """Synthetic tests for the documented Agilent States trace layout."""
+
+    def test_pairs_traces_and_preserves_direct_complex_axis(self):
+        as_float_array = pytest.importorskip(
+            "spectrochempy_hypercomplex"
+        ).as_float_array
+
+        data = np.empty((4, 3), dtype=np.complex128)
+        data[0] = [1 + 2j, 3 + 4j, 5 + 6j]
+        data[1] = [10 + 20j, 30 + 40j, 50 + 60j]
+        data[2] = [100 + 200j, 300 + 400j, 500 + 600j]
+        data[3] = [1000 + 2000j, 3000 + 4000j, 5000 + 6000j]
+
+        result = _reconstruct_agilent_states(data)
+
+        assert result.shape == (2, 3)
+        np.testing.assert_array_equal(
+            as_float_array(result),
+            np.array(
+                [
+                    [[1, 2, 10, 20], [3, 4, 30, 40], [5, 6, 50, 60]],
+                    [
+                        [100, 200, 1000, 2000],
+                        [300, 400, 3000, 4000],
+                        [500, 600, 5000, 6000],
+                    ],
+                ]
+            ),
+        )
+
+    def test_odd_trace_count_is_rejected_without_pairing(self):
+        with pytest.raises(ValueError, match="paired traces"):
+            _reconstruct_agilent_states(np.zeros((3, 4), dtype=np.complex128))
 
 
 # ---------------------------------------------------------------------------
