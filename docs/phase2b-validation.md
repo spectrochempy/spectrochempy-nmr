@@ -59,3 +59,16 @@ serially; the RTD configuration therefore serializes the gallery build.
 The local non-executing mode was also rebuilt from a clean generated-source
 tree with `READTHEDOCS` and `NMR_DOCS_EXECUTE` unset; it passed strictly and
 reported that no examples were executed.
+
+## Actual Read the Docs result
+
+The first PR build (`35520617`) failed in the relaxation example because the
+minimal fixture set did not yet include `relax/100/pdata/1/proc` and `procs`.
+Those two provenance-covered files were added to the immutable manifest without
+changing the example or scientific code.
+
+The subsequent RTD build `35520824` passed. Its preview was
+<https://spectrochempy-nmr--17.org.readthedocs.build/17/>; the RTD log confirms
+16 verified fixtures, six executed examples, strict HTML success, and no CP/2D
+example selection. The RTD build uses the serialized Sphinx command documented
+in `.readthedocs.yaml`.
