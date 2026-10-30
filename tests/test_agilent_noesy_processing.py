@@ -5,16 +5,22 @@ import pytest
 import spectrochempy as scp
 from spectrochempy_hypercomplex import as_float_array
 
-from spectrochempy_nmr import process_agilent_noesy_states_tppi
+from spectrochempy_nmr import (
+    extract_noesy_components,
+    process_agilent_noesy_states_tppi,
+    process_agilent_noesy_states_tppi_channels,
+)
 
 
-def _dataset():
+def _dataset(mask=None):
     rows, points = 6, 8
     row = np.arange(rows, dtype=float)[:, None]
     col = np.arange(points, dtype=float)[None, :]
     data = (
         np.exp(1j * (0.31 * row + 0.17 * col)) * (1.0 + 0.07 * row + 0.013 * col)
     ).astype(np.complex64)
+    if mask is not None:
+        data = np.ma.array(data, mask=mask)
     ds = scp.NDDataset(
         data,
         coordset=[scp.Coord.arange(rows), scp.Coord.arange(points)],
@@ -126,3 +132,68 @@ def test_noesy_pipeline_out_of_place_preserves_input_metadata():
     assert source.data.shape == (6, 8)
     assert source.meta.marker == "input"
     assert result.meta.data_domain == "frequency"
+
+
+def test_noesy_channels_match_independent_reference_and_have_explicit_contract():
+    source = _dataset()
+    source.meta.provenance = "Synthetic"
+    expected = _reference(source.data)
+
+    result = process_agilent_noesy_states_tppi_channels(source)
+
+    assert result.shape == (2, 3, 8)
+    assert result.dims == ["c", "y", "x"]
+    assert result.dtype.kind == "c"
+    assert result.coordset["c"].labels.tolist() == ["S_R", "S_I"]
+    assert result.meta.stage == "spectrum"
+    assert result.meta.component_axis == "c"
+    assert result.meta.axis_roles == ("component", "F1", "F2")
+    assert result.meta.component_labels == ("S_R", "S_I")
+    assert result.meta.provenance == "Synthetic"
+    np.testing.assert_allclose(result.data[0].real, expected[:, :, 0], rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(result.data[1].real, expected[:, :, 1], rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(result.data[0].imag, expected[:, :, 2], rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(result.data[1].imag, expected[:, :, 3], rtol=2e-6, atol=2e-6)
+    assert source.data.shape == (6, 8)
+
+
+def test_noesy_components_keep_the_explicit_rr_ri_ir_ii_mapping():
+    result = process_agilent_noesy_states_tppi_channels(_dataset())
+    components = extract_noesy_components(result)
+
+    assert list(components) == ["RR", "IR", "RI", "II"]
+    assert all(component.dims == ["y", "x"] for component in components.values())
+    np.testing.assert_allclose(components["RR"].data, result.data[0].real)
+    np.testing.assert_allclose(components["IR"].data, result.data[0].imag)
+    np.testing.assert_allclose(components["RI"].data, result.data[1].real)
+    np.testing.assert_allclose(components["II"].data, result.data[1].imag)
+
+
+def test_noesy_channels_reject_masked_time_domain_input():
+    mask = np.zeros((6, 8), dtype=bool)
+    mask[0, 0] = True
+    source = _dataset(mask)
+
+    with pytest.raises(ValueError, match="unmasked input"):
+        process_agilent_noesy_states_tppi_channels(source)
+
+
+def test_noesy_spectral_masks_survive_components_and_persistence(tmp_path):
+    result = process_agilent_noesy_states_tppi_channels(_dataset())
+    mask = np.zeros(result.shape, dtype=bool)
+    mask[0, 1, 2] = True
+    mask[1, 2, 3] = True
+    result.mask = mask
+
+    components = extract_noesy_components(result)
+    assert components["RR"].mask[1, 2]
+    assert components["IR"].mask[1, 2]
+    assert components["RI"].mask[2, 3]
+    assert components["II"].mask[2, 3]
+
+    path = result.save_as(tmp_path / "noesy_channels", confirm=False)
+    loaded = scp.NDDataset.load(path)
+    np.testing.assert_allclose(loaded.data, result.data)
+    np.testing.assert_array_equal(loaded.mask, result.mask)
+    assert loaded.dims == ["c", "y", "x"]
+    assert list(loaded.meta.component_labels) == ["S_R", "S_I"]

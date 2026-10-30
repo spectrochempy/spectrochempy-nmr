@@ -66,6 +66,31 @@ def _validate_profile(dataset, ni, np_raw, arraydim, ntraces):
     return data
 
 
+def _has_mask(dataset):
+    """Return whether any input point is masked."""
+    mask = np.asarray(dataset.mask, dtype=bool)
+    return bool(np.any(mask))
+
+
+def _compute_noesy_channels(dataset, *, transport, ni, np_raw, arraydim, ntraces):
+    """Compute the validated NOESY channel arrays without a storage choice."""
+    data = _validate_profile(dataset, ni, np_raw, arraydim, ntraces)
+    if _has_mask(dataset):
+        raise ValueError("Agilent NOESY FFT processing requires unmasked input")
+
+    if transport == "var2pipe":
+        data = ((-1) ** np.arange(data.shape[0]))[:, None] * np.conjugate(data)
+
+    # N * fftshift(ifft(data)) equals conjugate(fftshift(fft(conjugate(data))))
+    # for the core FFT convention; do not apply N a second time here.
+    f2 = np.conjugate(_complex_fft(np.conjugate(data), axis=1))
+    e1 = f2[0::2]
+    e2 = f2[1::2]
+    c_r = e1.real - 1j * e2.real
+    c_i = e1.imag - 1j * e2.imag
+    return _complex_fft(c_r, axis=0), _complex_fft(c_i, axis=0), data
+
+
 def process_agilent_noesy_states_tppi(
     dataset,
     *,
@@ -94,20 +119,14 @@ def process_agilent_noesy_states_tppi(
     np_raw = _meta_value(meta, "np_raw", _meta_value(meta, "np", np_raw))
     arraydim = _meta_value(meta, "arraydim", arraydim)
     ntraces = _meta_value(meta, "ntraces", ntraces)
-    data = _validate_profile(dataset, ni, np_raw, arraydim, ntraces)
-
-    if transport == "var2pipe":
-        data = ((-1) ** np.arange(data.shape[0]))[:, None] * np.conjugate(data)
-
-    # N * fftshift(ifft(data)) equals conjugate(fftshift(fft(conjugate(data))))
-    # for the core FFT convention; do not apply N a second time here.
-    f2 = np.conjugate(_complex_fft(np.conjugate(data), axis=1))
-    e1 = f2[0::2]
-    e2 = f2[1::2]
-    c_r = e1.real - 1j * e2.real
-    c_i = e1.imag - 1j * e2.imag
-    s_r = _complex_fft(c_r, axis=0)
-    s_i = _complex_fft(c_i, axis=0)
+    s_r, s_i, data = _compute_noesy_channels(
+        dataset,
+        transport=transport,
+        ni=ni,
+        np_raw=np_raw,
+        arraydim=arraydim,
+        ntraces=ntraces,
+    )
 
     rr, ir = s_r.real, s_r.imag
     ri, ii = s_i.real, s_i.imag
@@ -157,4 +176,121 @@ def process_agilent_noesy_states_tppi(
     result.meta.isfreq = [True, True]
     if inplace:
         return None
+    return result
+
+
+def process_agilent_noesy_states_tppi_channels(
+    dataset,
+    *,
+    transport="none",
+    ni=None,
+    np_raw=None,
+    arraydim=None,
+    ntraces=None,
+):
+    """Return the experimental NOESY spectrum as a complex-channel dataset.
+
+    The result has shape ``(2, ni, np_raw // 2)`` and dimensions ``("c", "y",
+    "x")``. Its channels are ``S_R`` and ``S_I``. The input is an explicitly
+    annotated, unmasked NOESY profile; no quaternion storage or quaternion FFT
+    is used.
+    """
+    if transport not in ("none", "var2pipe"):
+        raise ValueError("transport must be 'none' or 'var2pipe'")
+    meta = dataset.meta
+    ni = _meta_value(meta, "ni", ni)
+    np_raw = _meta_value(meta, "np_raw", _meta_value(meta, "np", np_raw))
+    arraydim = _meta_value(meta, "arraydim", arraydim)
+    ntraces = _meta_value(meta, "ntraces", ntraces)
+    s_r, s_i, raw_data = _compute_noesy_channels(
+        dataset,
+        transport=transport,
+        ni=ni,
+        np_raw=np_raw,
+        arraydim=arraydim,
+        ntraces=ntraces,
+    )
+
+    import spectrochempy as scp  # noqa: PLC0415
+
+    result = scp.NDDataset(
+        np.stack([s_r, s_i], axis=0),
+        coordset=[
+            scp.Coord.arange(2, dims="c", labels=["S_R", "S_I"]),
+            scp.Coord.arange(ni, dims="y"),
+            scp.Coord.arange(np_raw // 2, dims="x"),
+        ],
+        dims=["c", "y", "x"],
+    )
+    result.meta.update(
+        {
+            "processing_profile": "agilent-noesy-states-tppi-experimental",
+            "stage": "spectrum",
+            "transport": transport,
+            "component_axis": "c",
+            "component_labels": ("S_R", "S_I"),
+            "axis_roles": ("component", "F1", "F2"),
+            "mathematical_component_order": ("RR", "RI", "IR", "II"),
+            "data_domain": "frequency",
+            "coordinates_status": "provisional_index",
+            "normalization": "none",
+            "provenance": _meta_value(meta, "provenance"),
+            "raw_shape": tuple(raw_data.shape),
+            "raw_ni": int(ni),
+            "raw_np": int(np_raw),
+            "raw_arraydim": int(arraydim),
+            "raw_ntraces": int(ntraces),
+            "returned_shape": (2, int(ni), int(np_raw // 2)),
+            "raw_acquisition": {
+                "seqfil": "NOESY",
+                "phase": (1, 2),
+                "ni": int(ni),
+                "np": int(np_raw),
+                "arraydim": int(arraydim),
+                "ntraces": int(ntraces),
+            },
+        }
+    )
+    result.meta.td = [2, int(ni), int(np_raw // 2)]
+    result.meta.isfreq = [False, True, True]
+    return result
+
+
+def extract_noesy_components(dataset):
+    """Return ``RR``, ``RI``, ``IR`` and ``II`` as independent 2D datasets."""
+    if tuple(dataset.dims) != ("c", "y", "x"):
+        raise ValueError("NOESY channel dataset must have dimensions ('c', 'y', 'x')")
+    if _meta_value(dataset.meta, "stage") != "spectrum":
+        raise ValueError("NOESY components require a spectrum-stage dataset")
+    if tuple(_meta_value(dataset.meta, "component_labels", ())) != ("S_R", "S_I"):
+        raise ValueError("NOESY spectrum channels must be labelled S_R and S_I")
+
+    import spectrochempy as scp  # noqa: PLC0415
+
+    source = np.ma.array(dataset.data, mask=np.asarray(dataset.mask, dtype=bool))
+    sr, si = source[0], source[1]
+    arrays = {"RR": sr.real, "IR": sr.imag, "RI": si.real, "II": si.imag}
+    masks = {
+        "RR": np.ma.getmaskarray(sr),
+        "IR": np.ma.getmaskarray(sr),
+        "RI": np.ma.getmaskarray(si),
+        "II": np.ma.getmaskarray(si),
+    }
+    coords = [dataset.coordset["y"].copy(), dataset.coordset["x"].copy()]
+    result = {}
+    for name, values in arrays.items():
+        item = scp.NDDataset(
+            np.ma.array(np.asarray(values), mask=masks[name]),
+            coordset=coords,
+            dims=["y", "x"],
+        )
+        item.meta.update(
+            {
+                "stage": "spectrum_component",
+                "component": name,
+                "component_source": "S_R" if name in ("RR", "IR") else "S_I",
+                "profile": _meta_value(dataset.meta, "processing_profile"),
+            }
+        )
+        result[name] = item
     return result
