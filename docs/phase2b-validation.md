@@ -4,6 +4,11 @@ This record describes the clean local RTD-like validation performed for the
 Phase 2b working tree. It is not a substitute for an actual Read the Docs
 build; the RTD project is not modified by this phase.
 
+The validated functional documentation state is commit
+`b10ab3c9058cac3c4669d858b3015e421a1c13a8`. Commit `17c886f` records only the
+source/manifest provenance for that validated state; it does not alter the
+theme, gallery, fixture fetcher or build behavior.
+
 ## Environment
 
 ```text
