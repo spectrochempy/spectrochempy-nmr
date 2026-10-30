@@ -38,6 +38,10 @@ The build was run after deleting `docs/examples/gallery`,
 `docs/sg_execution_times.rst` and the output directory, so Sphinx-Gallery could
 not reuse generated source or execution caches.
 
+The RTD log from the first PR build reproduced a failure in the relaxation
+example under Sphinx's `-j auto` invocation. The same clean environment passed
+serially; the RTD configuration therefore serializes the gallery build.
+
 ## Results
 
 - `pip check`: **PASS**;
@@ -49,6 +53,8 @@ not reuse generated source or execution caches.
 - `objects.inv`: **PASS**;
 - elapsed build time: **17.53 s**;
 - peak RSS: **265536 KiB** (approximately 259 MiB).
+- RTD parallel-gallery failure: reproduced once, then eliminated by the
+  serialized RTD build command; no source/scientific workaround was used.
 
 The local non-executing mode was also rebuilt from a clean generated-source
 tree with `READTHEDOCS` and `NMR_DOCS_EXECUTE` unset; it passed strictly and

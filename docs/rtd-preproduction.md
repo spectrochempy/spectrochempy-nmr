@@ -15,6 +15,11 @@ package is installed from the checkout being built. Sphinx-Gallery executes the
 six approved examples on RTD; local builds remain non-executing unless
 `NMR_DOCS_EXECUTE=1` is set. No experimental 2D fixtures are fetched.
 
+The RTD HTML job uses a serialized Sphinx invocation instead of RTD's default
+`-j auto`: the parallel invocation reproduced a shared plugin-metadata failure
+in the relaxation example, while the same clean environment passes serially.
+This is a targeted reliability constraint, not a scientific-code change.
+
 The local phase-1 validation used core `1.1.4.dev21` from a checkout. The RTD
 resolution is intentionally recorded separately because that development core
 revision is not a published installable dependency.
