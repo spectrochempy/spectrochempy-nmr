@@ -4,6 +4,7 @@
 package = "spectrochempy-nmr"
 version = "0.2.0"
 phase = "2b"
+documentation_commit = "b10ab3c9058cac3c4669d858b3015e421a1c13a8"
 python = "3.13.13"
 core_docs_url = "https://www.spectrochempy.fr/latest/"
 
