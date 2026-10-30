@@ -5,6 +5,9 @@ from __future__ import annotations
 import numpy as np
 
 
+_RECONSTRUCTION_PROFILE = "noesy-states-tppi"
+
+
 def _meta_value(meta, key, default=None):
     """Return a metadata value without depending on a concrete Meta class."""
     try:
@@ -102,16 +105,45 @@ def _compute_legacy_noesy_arrays(
 
 def _validate_complex_channels(dataset, reconstruction):
     """Validate the vendor-neutral input to the common channel engine."""
-    if reconstruction != "agilent-noesy-states-tppi":
+    if reconstruction != _RECONSTRUCTION_PROFILE:
         raise ValueError(f"unsupported complex-channel reconstruction: {reconstruction}")
     if tuple(dataset.dims) != ("c", "y", "x"):
         raise ValueError("complex-channel input must have dimensions ('c', 'y', 'x')")
     data = np.asarray(dataset.data)
     if data.ndim != 3 or data.shape[0] != 2 or not np.iscomplexobj(data):
         raise ValueError("complex-channel input must have shape (2, nF1, nF2)")
+    if _meta_value(dataset.meta, "stage") != "acquisition":
+        raise ValueError("complex-channel input must have stage='acquisition'")
+    labels = _meta_value(dataset.meta, "component_labels")
+    if (tuple(labels) if labels is not None else ()) != ("branch_0", "branch_1"):
+        raise ValueError("complex-channel input must label branches branch_0 and branch_1")
+    channel_labels = dataset.coordset["c"].labels
+    if channel_labels is None or tuple(str(label) for label in channel_labels) != (
+        "branch_0",
+        "branch_1",
+    ):
+        raise ValueError("complex-channel coordinate labels must identify both branches")
+    isfreq = _meta_value(dataset.meta, "isfreq")
+    if list(isfreq or ()) != [False, False, False]:
+        raise ValueError("complex-channel input must be in the time domain")
+    td = _meta_value(dataset.meta, "td")
+    if list(td or ()) != list(data.shape):
+        raise ValueError("complex-channel td metadata must match the dataset shape")
+    if _meta_value(dataset.meta, "encoding") not in (None, ""):
+        raise ValueError("complex-channel input must not carry an active FFT encoding")
     if _has_mask(dataset):
         raise ValueError("complex-channel FFT processing requires unmasked input")
     return data
+
+
+def _carried_metadata(dataset):
+    """Return descriptive normalized-input metadata without interpreting it."""
+    carried = {}
+    for key in ("provenance", "acquisition", "normalization"):
+        value = _meta_value(dataset.meta, key)
+        if value is not None:
+            carried[key] = value
+    return carried
 
 
 def _make_channel_dataset(data, *, labels, y_coord, x_coord, stage, meta=None):
@@ -133,7 +165,7 @@ def _make_channel_dataset(data, *, labels, y_coord, x_coord, stage, meta=None):
             "axis_roles": ("component", "F1", "F2"),
             "stage": stage,
             "component_labels": tuple(labels),
-            "reconstruction_profile": "agilent-noesy-states-tppi",
+            "reconstruction_profile": _RECONSTRUCTION_PROFILE,
         }
     )
     if meta is not None:
@@ -147,8 +179,8 @@ def _process_complex_channels(dataset, *, reconstruction):
     import spectrochempy as scp  # noqa: PLC0415
 
     working = dataset.copy()
-    working.meta.isfreq = [False, False, False]
     working.meta.td = list(working.shape)
+    carried = _carried_metadata(dataset)
     # The validated NOESY transport uses N * fftshift(ifft). Express that
     # convention through the core's ordinary complex FFT identity, while
     # retaining the complete 3D channel dataset throughout the operation.
@@ -165,9 +197,10 @@ def _process_complex_channels(dataset, *, reconstruction):
         x_coord=f2.coordset["x"],
         stage="f1_interferograms",
         meta={
-            "processing_profile": "agilent-noesy-states-tppi",
+            "processing_profile": _RECONSTRUCTION_PROFILE,
             "fft_f2": True,
             "reconstruction_f1": True,
+            **carried,
         },
     )
     interferograms.meta.isfreq = [False, False, True]
@@ -180,13 +213,14 @@ def _process_complex_channels(dataset, *, reconstruction):
         x_coord=spectrum.coordset["x"],
         stage="spectrum",
         meta={
-            "processing_profile": "agilent-noesy-states-tppi",
+            "processing_profile": _RECONSTRUCTION_PROFILE,
             "fft_f2": True,
             "reconstruction_f1": True,
             "fft_f1": True,
             "mathematical_component_order": ("RR", "RI", "IR", "II"),
             "data_domain": "frequency",
             "coordinates_status": "provisional_index",
+            **carried,
         },
     )
     spectrum.meta.update(
@@ -225,10 +259,13 @@ def _agilent_channels_adapter(dataset, *, transport, ni, np_raw, arraydim, ntrac
             "component_axis": "c",
             "component_labels": ("branch_0", "branch_1"),
             "axis_roles": ("component", "F1", "F2"),
-            "processing_profile": "agilent-noesy-states-tppi",
+            "processing_profile": _RECONSTRUCTION_PROFILE,
             "transport": transport,
             "coordinates_status": "provisional_index",
             "raw_shape": tuple(data.shape),
+            "provenance": _meta_value(dataset.meta, "provenance"),
+            "acquisition": _meta_value(dataset.meta, "acquisition"),
+            "normalization": _meta_value(dataset.meta, "normalization"),
         }
     )
     channels.meta.isfreq = [False, False, False]
@@ -357,7 +394,7 @@ def process_agilent_noesy_states_tppi_channels(
     )
     result = _process_complex_channels(
         channels,
-        reconstruction="agilent-noesy-states-tppi",
+        reconstruction=_RECONSTRUCTION_PROFILE,
     )
     result.meta.update(
         {

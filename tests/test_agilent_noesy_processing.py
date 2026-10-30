@@ -191,23 +191,64 @@ def test_common_channel_engine_ignores_vendor_provenance(provenance):
             "stage": "acquisition",
             "component_labels": ("branch_0", "branch_1"),
             "provenance": provenance,
+            "acquisition": {"mode": "normalized"},
+            "normalization": "validated-branches",
+            "isfreq": [False, False, False],
+            "td": [2, 3, 8],
         }
     )
 
     result = _process_complex_channels(
         channels,
-        reconstruction="agilent-noesy-states-tppi",
+        reconstruction="noesy-states-tppi",
     )
 
     assert result.dims == ["c", "y", "x"]
     assert result.meta.stage == "spectrum"
     assert result.meta.component_labels == ("S_R", "S_I")
-    assert result.meta.get("provenance") is None
+    assert result.meta.provenance == provenance
+    assert result.meta.acquisition == {"mode": "normalized"}
+    assert result.meta.normalization == "validated-branches"
     expected = _reference(source.data)
     np.testing.assert_allclose(result.data[0].real, expected[:, :, 0], rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(result.data[1].real, expected[:, :, 1], rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(result.data[0].imag, expected[:, :, 2], rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(result.data[1].imag, expected[:, :, 3], rtol=2e-6, atol=2e-6)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"stage": "spectrum"},
+        {"component_labels": ("branch_1", "branch_0")},
+        {"isfreq": [False, True, False]},
+        {"td": [2, 3, 7]},
+        {"encoding": "states-tppi"},
+    ],
+)
+def test_common_channel_engine_rejects_non_acquisition_contract(changes):
+    source = _dataset()
+    channels = scp.NDDataset(
+        np.stack([source.data[0::2], source.data[1::2]], axis=0),
+        coordset=[
+            scp.Coord.arange(2, dims="c", labels=["branch_0", "branch_1"]),
+            scp.Coord.arange(3, dims="y"),
+            scp.Coord.arange(8, dims="x"),
+        ],
+        dims=["c", "y", "x"],
+    )
+    channels.meta.update(
+        {
+            "stage": "acquisition",
+            "component_labels": ("branch_0", "branch_1"),
+            "isfreq": [False, False, False],
+            "td": [2, 3, 8],
+        }
+    )
+    channels.meta.update(changes)
+
+    with pytest.raises(ValueError):
+        _process_complex_channels(channels, reconstruction="noesy-states-tppi")
 
 
 def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
@@ -221,7 +262,14 @@ def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
         ],
         dims=["c", "y", "x"],
     )
-    channels.meta.stage = "acquisition"
+    channels.meta.update(
+        {
+            "stage": "acquisition",
+            "component_labels": ("branch_0", "branch_1"),
+            "isfreq": [False, False, False],
+            "td": [2, 3, 8],
+        }
+    )
     calls = []
     original_fft = scp.fft
 
@@ -232,7 +280,7 @@ def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
     monkeypatch.setattr(scp, "fft", recording_fft)
     _process_complex_channels(
         channels,
-        reconstruction="agilent-noesy-states-tppi",
+        reconstruction="noesy-states-tppi",
     )
 
     assert calls == [
