@@ -140,6 +140,23 @@ The Agilent adapter is transitional. The common engine does not import readers,
 vendor adapters or `spectrochempy_hypercomplex`; future `nmrglue-ng`
 normalization will feed it through the same normalized-channel boundary.
 
+### Experimental neutral interop conversion
+
+The plugin also exposes a generic converter for a validated normalized
+acquisition supplied by `nmrglue.interop`:
+
+```python
+dataset = scp.nmr.from_interop(normalized_acquisition)
+```
+
+The first supported profile is a storage-normalized complex 1D FID. The
+converter accepts the neutral contract rather than a vendor or sequence name,
+preserves axes, provenance, acquisition metadata and applied operations, and
+does not perform FFT, scaling, conjugation, phasing or merging. A descriptive
+`ReadResult` is rejected until a profile-specific normalization step has
+established its guarantees. Existing `read_agilent`, `read_topspin` and merge
+behavior are unchanged in this experimental bridge.
+
 ## Development
 
 From the plugin directory, install the plugin against an installed compatible
