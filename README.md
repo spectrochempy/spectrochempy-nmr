@@ -98,7 +98,9 @@ labels are not a claim that the physical Agilent quadrature convention has been
 validated. It does not perform a quaternion FFT, apodization, phasing, linear
 prediction, or universal vendor interpretation. Other Agilent sequences and
 encodings are rejected. This is experimental and is not part of the validated
-public processing workflow.
+public processing workflow. The input must also declare `ntraces=1`; returned
+coordinates are provisional index coordinates and are not a calibrated physical
+frequency claim. Raw acquisition values are retained under `raw_acquisition`.
 
 ## Development
 

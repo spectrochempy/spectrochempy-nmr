@@ -26,6 +26,7 @@ def _dataset():
             "ni": 3,
             "np": 16,
             "arraydim": 6,
+            "ntraces": 1,
         }
     )
     return ds
@@ -57,8 +58,12 @@ def test_noesy_pipeline_matches_independent_complex_reference():
     assert result.meta.raw_shape == (6, 8)
     assert result.meta.raw_ni == 3
     assert result.meta.raw_np == 16
+    assert result.meta.raw_ntraces == 1
     assert result.meta.returned_shape == (3, 8)
     assert result.meta.td == [3, 8]
+    assert result.meta.isfreq == [True, True]
+    assert result.meta.coordinates_status == "provisional_index"
+    assert result.meta.raw_acquisition["arraydim"] == 6
     assert result.coordset[0].size == 8
     assert result.coordset[1].size == 3
     assert source.data.shape == (6, 8)
@@ -91,6 +96,8 @@ def test_noesy_pipeline_rejects_unknown_transport():
         {"arraydim": 4},
         {"np": 15},
         {"ni": True},
+        {"ntraces": 2},
+        {"ntraces": None},
     ],
 )
 def test_noesy_pipeline_rejects_non_noesy_profiles(changes):
@@ -108,3 +115,14 @@ def test_noesy_pipeline_inplace_returns_none():
 
     assert result is None
     assert source.data.shape == (3, 8)
+
+
+def test_noesy_pipeline_out_of_place_preserves_input_metadata():
+    source = _dataset()
+    source.meta["marker"] = "input"
+
+    result = process_agilent_noesy_states_tppi(source)
+
+    assert source.data.shape == (6, 8)
+    assert source.meta.marker == "input"
+    assert result.meta.data_domain == "frequency"

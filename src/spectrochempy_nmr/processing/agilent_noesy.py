@@ -27,13 +27,19 @@ def _complex_fft(data, axis):
     return np.asarray(scp.fft(dataset, dim=axis).data)
 
 
-def _validate_profile(dataset, ni, np_raw, arraydim):
+def _validate_profile(dataset, ni, np_raw, arraydim, ntraces):
     """Validate the deliberately narrow experimental profile."""
     data = np.asarray(dataset.data)
     if data.ndim != 2 or not np.iscomplexobj(data):
         raise ValueError("Agilent NOESY processing requires a complex 2D array")
     if _meta_value(dataset.meta, "seqfil") != "NOESY":
         raise ValueError("Agilent NOESY processing requires seqfil='NOESY'")
+    if ntraces is None:
+        raise ValueError("Agilent NOESY processing requires ntraces=1 metadata")
+    if isinstance(ntraces, bool) or not isinstance(ntraces, (int, np.integer)):
+        raise ValueError("Agilent NOESY ntraces must be an integer")
+    if ntraces != 1:
+        raise ValueError("Agilent NOESY processing requires ntraces=1")
 
     phase = _meta_value(dataset.meta, "phase")
     if (
@@ -67,6 +73,7 @@ def process_agilent_noesy_states_tppi(
     ni=None,
     np_raw=None,
     arraydim=None,
+    ntraces=None,
     inplace=False,
 ):
     """Process an explicitly annotated Agilent NOESY States-TPPI dataset.
@@ -86,7 +93,8 @@ def process_agilent_noesy_states_tppi(
     ni = _meta_value(meta, "ni", ni)
     np_raw = _meta_value(meta, "np_raw", _meta_value(meta, "np", np_raw))
     arraydim = _meta_value(meta, "arraydim", arraydim)
-    data = _validate_profile(dataset, ni, np_raw, arraydim)
+    ntraces = _meta_value(meta, "ntraces", ntraces)
+    data = _validate_profile(dataset, ni, np_raw, arraydim, ntraces)
 
     if transport == "var2pipe":
         data = ((-1) ** np.arange(data.shape[0]))[:, None] * np.conjugate(data)
@@ -130,10 +138,23 @@ def process_agilent_noesy_states_tppi(
             "raw_ni": int(ni),
             "raw_np": int(np_raw),
             "raw_arraydim": int(arraydim),
+            "raw_ntraces": int(ntraces),
             "returned_shape": (int(ni), int(np_raw // 2)),
+            "data_domain": "frequency",
+            "axis_roles": ("F1", "F2"),
+            "coordinates_status": "provisional_index",
+            "raw_acquisition": {
+                "seqfil": "NOESY",
+                "phase": (1, 2),
+                "ni": int(ni),
+                "np": int(np_raw),
+                "arraydim": int(arraydim),
+                "ntraces": int(ntraces),
+            },
         }
     )
     result.meta.td = [int(ni), int(np_raw // 2)]
+    result.meta.isfreq = [True, True]
     if inplace:
         return None
     return result
