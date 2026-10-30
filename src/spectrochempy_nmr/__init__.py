@@ -647,6 +647,10 @@ def __getattr__(name: str):
         )
 
         return extract_complex_components
+    if name == "from_interop":
+        from .interop import from_interop  # noqa: PLC0415
+
+        return from_interop
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
 
@@ -658,6 +662,7 @@ def __dir__() -> list[str]:
         "process_agilent_noesy_states_tppi",
         "process_agilent_noesy_states_tppi_channels",
         "extract_noesy_components",
+        "from_interop",
         "read",
         "read_topspin",
         "read_agilent",
