@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..processing.complex_channels import process_complex_channels
-from ..processing.quadrature import NOESY_STATES_TPPI
+from ..processing.quadrature import STATES_TPPI
 
 
 def _meta_value(meta, key, default=None):
@@ -129,7 +129,16 @@ def _agilent_channels_adapter(dataset, *, transport, ni, np_raw, arraydim, ntrac
             "component_axis": "c",
             "component_labels": ("branch_0", "branch_1"),
             "axis_roles": ("component", "F1", "F2"),
-            "processing_profile": NOESY_STATES_TPPI,
+            "processing_profile": STATES_TPPI,
+            "sequence": "NOESY",
+            "vendor": "Agilent",
+            "quadrature_mode": STATES_TPPI,
+            "branch_order": ("E1", "E2"),
+            "f1coef": (1, 0, 0, 0, 0, 0, -1, 0),
+            "tppi_alternation_state": "encoded",
+            "normalization_state": "normalized",
+            "f2_convention": "centered-inverse-unscaled",
+            "applied_operations": ("transport", "branch_demultiplex"),
             "transport": transport,
             "coordinates_status": "provisional_index",
             "raw_shape": tuple(data.shape),
@@ -264,11 +273,11 @@ def process_agilent_noesy_states_tppi_channels(
     )
     result = process_complex_channels(
         channels,
-        reconstruction=NOESY_STATES_TPPI,
+        reconstruction=STATES_TPPI,
     )
     result.meta.update(
         {
-            "processing_profile": "noesy-states-tppi-experimental",
+            "processing_profile": "states-tppi-experimental",
             "stage": "spectrum",
             "transport": transport,
             "component_axis": "c",

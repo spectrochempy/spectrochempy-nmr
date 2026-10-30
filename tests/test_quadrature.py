@@ -16,7 +16,7 @@ def test_noesy_states_tppi_reconstruction_keeps_branch_associations():
 
     result = reconstruct_f1_interferograms(
         branches,
-        profile="noesy-states-tppi",
+        profile="states-tppi",
     )
 
     expected = np.stack(

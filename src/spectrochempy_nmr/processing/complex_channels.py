@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from .quadrature import NOESY_STATES_TPPI
+from .quadrature import STATES_TPPI
+from .quadrature import STATES_TPPI_F1COEF
+from .quadrature import STATES_TPPI_F2_CONVENTION
 from .quadrature import reconstruct_f1_interferograms
 
 
@@ -21,7 +23,7 @@ def _has_mask(dataset):
 
 def _validate_complex_channels(dataset, reconstruction):
     """Validate the normalized acquisition-channel contract."""
-    if reconstruction != NOESY_STATES_TPPI:
+    if reconstruction != STATES_TPPI:
         raise ValueError(f"unsupported complex-channel reconstruction: {reconstruction}")
     if tuple(dataset.dims) != ("c", "y", "x"):
         raise ValueError("complex-channel input must have dimensions ('c', 'y', 'x')")
@@ -54,6 +56,19 @@ def _validate_complex_channels(dataset, reconstruction):
         raise ValueError("complex-channel td metadata must match the dataset shape")
     if _meta_value(dataset.meta, "encoding") not in (None, ""):
         raise ValueError("complex-channel input must not carry an active FFT encoding")
+    quadrature = _meta_value(dataset.meta, "quadrature_mode")
+    if quadrature != STATES_TPPI:
+        raise ValueError("complex-channel input must declare quadrature_mode='states-tppi'")
+    if tuple(_meta_value(dataset.meta, "branch_order", ())) != ("E1", "E2"):
+        raise ValueError("complex-channel input must declare normalized E1/E2 branches")
+    if tuple(_meta_value(dataset.meta, "f1coef", ())) != STATES_TPPI_F1COEF:
+        raise ValueError("complex-channel input has an unsupported States-TPPI f1coef")
+    if _meta_value(dataset.meta, "tppi_alternation_state") != "encoded":
+        raise ValueError("complex-channel input must declare encoded TPPI alternation")
+    if _meta_value(dataset.meta, "normalization_state") != "normalized":
+        raise ValueError("complex-channel input must declare normalized branches")
+    if _meta_value(dataset.meta, "f2_convention") != STATES_TPPI_F2_CONVENTION:
+        raise ValueError("complex-channel input has an unsupported F2 convention")
     if _has_mask(dataset):
         raise ValueError("complex-channel FFT processing requires unmasked input")
     return data
@@ -62,7 +77,20 @@ def _validate_complex_channels(dataset, reconstruction):
 def _carried_metadata(dataset):
     """Return descriptive normalized-input metadata without interpreting it."""
     carried = {}
-    for key in ("provenance", "acquisition", "normalization"):
+    for key in (
+        "provenance",
+        "acquisition",
+        "normalization",
+        "sequence",
+        "vendor",
+        "quadrature_mode",
+        "branch_order",
+        "f1coef",
+        "tppi_alternation_state",
+        "normalization_state",
+        "f2_convention",
+        "applied_operations",
+    ):
         value = _meta_value(dataset.meta, key)
         if value is not None:
             carried[key] = value
@@ -87,7 +115,7 @@ def _make_channel_dataset(data, *, labels, y_coord, x_coord, stage, meta=None):
             "axis_roles": ("component", "F1", "F2"),
             "stage": stage,
             "component_labels": tuple(labels),
-            "reconstruction_profile": NOESY_STATES_TPPI,
+            "reconstruction_profile": STATES_TPPI,
         }
     )
     if meta is not None:
@@ -104,14 +132,18 @@ def process_complex_channels(dataset, *, reconstruction):
     working.meta.td = list(working.shape)
     carried = _carried_metadata(dataset)
 
-    # The validated NOESY transport uses N * fftshift(ifft). Express that
+    # The normalized input contract uses N * fftshift(ifft). Express that
     # convention through the core's ordinary complex FFT identity.
     f2_input = working.copy()
     f2_input.data = np.conjugate(f2_input.data)
     f2 = scp.fft(f2_input, dim="x")
     f2_data = np.conjugate(np.asarray(f2.data))
     interferograms = _make_channel_dataset(
-        reconstruct_f1_interferograms(f2_data, profile=reconstruction),
+        reconstruct_f1_interferograms(
+            f2_data,
+            profile=reconstruction,
+            meta=dataset.meta,
+        ),
         labels=("C_R", "C_I"),
         y_coord=f2.coordset["y"],
         x_coord=f2.coordset["x"],
@@ -158,6 +190,8 @@ def extract_complex_components(dataset):
         raise ValueError("NOESY components require a spectrum-stage dataset")
     if tuple(_meta_value(dataset.meta, "component_labels", ())) != ("S_R", "S_I"):
         raise ValueError("NOESY spectrum channels must be labelled S_R and S_I")
+    if _meta_value(dataset.meta, "quadrature_mode") != STATES_TPPI:
+        raise ValueError("spectrum must declare quadrature_mode='states-tppi'")
 
     import spectrochempy as scp  # noqa: PLC0415
 

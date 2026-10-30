@@ -119,11 +119,19 @@ native NDDataset persistence. The Agilent metadata and transport operation are
 an adapter boundary; the common channel engine receives only the normalized
 3D dataset and an explicit reconstruction profile.
 
+States-TPPI is the indirect-dimension acquisition mode; NOESY is only the
+first experimentally validated sequence using this adapter. The common engine
+does not select its calculation from the sequence or vendor identity. The
+normalized contract records `quadrature_mode="states-tppi"`, explicit `E1/E2`
+branch order, the validated `f1coef`, TPPI alternation state, normalization
+state and F2 transform convention. Other sequences are not thereby claimed to
+be experimentally validated.
+
 The implementation is split into three layers:
 
 - `processing/complex_channels.py` owns the normalized NDDataset contract,
   the two core FFT calls and channel/component views;
-- `processing/quadrature.py` owns the single validated `noesy-states-tppi`
+- `processing/quadrature.py` owns the single validated `states-tppi`
   reconstruction equation;
 - `adapters/agilent_noesy.py` owns the provisional Agilent metadata validation,
   transport conversion and branch demultiplexing.
