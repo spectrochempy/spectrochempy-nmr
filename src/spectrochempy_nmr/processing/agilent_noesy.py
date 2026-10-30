@@ -112,6 +112,15 @@ def _validate_complex_channels(dataset, reconstruction):
     data = np.asarray(dataset.data)
     if data.ndim != 3 or data.shape[0] != 2 or not np.iscomplexobj(data):
         raise ValueError("complex-channel input must have shape (2, nF1, nF2)")
+    if _meta_value(dataset.meta, "component_axis") != "c":
+        raise ValueError("complex-channel input must declare component_axis='c'")
+    axis_roles = _meta_value(dataset.meta, "axis_roles")
+    if (tuple(axis_roles) if axis_roles is not None else ()) != (
+        "component",
+        "F1",
+        "F2",
+    ):
+        raise ValueError("complex-channel input must declare component, F1 and F2 axis roles")
     if _meta_value(dataset.meta, "stage") != "acquisition":
         raise ValueError("complex-channel input must have stage='acquisition'")
     labels = _meta_value(dataset.meta, "component_labels")

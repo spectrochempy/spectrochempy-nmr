@@ -194,6 +194,8 @@ def test_common_channel_engine_ignores_vendor_provenance(provenance):
         {
             "stage": "acquisition",
             "component_labels": ("branch_0", "branch_1"),
+            "component_axis": "c",
+            "axis_roles": ("component", "F1", "F2"),
             "provenance": provenance,
             "acquisition": {"mode": "normalized"},
             "normalization": "validated-branches",
@@ -225,6 +227,8 @@ def test_common_channel_engine_ignores_vendor_provenance(provenance):
     [
         {"stage": "spectrum"},
         {"component_labels": ("branch_1", "branch_0")},
+        {"component_axis": "y"},
+        {"axis_roles": ("F1", "component", "F2")},
         {"isfreq": [False, True, False]},
         {"td": [2, 3, 7]},
         {"encoding": "states-tppi"},
@@ -245,6 +249,8 @@ def test_common_channel_engine_rejects_non_acquisition_contract(changes):
         {
             "stage": "acquisition",
             "component_labels": ("branch_0", "branch_1"),
+            "component_axis": "c",
+            "axis_roles": ("component", "F1", "F2"),
             "isfreq": [False, False, False],
             "td": [2, 3, 8],
         }
@@ -270,6 +276,8 @@ def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
         {
             "stage": "acquisition",
             "component_labels": ("branch_0", "branch_1"),
+            "component_axis": "c",
+            "axis_roles": ("component", "F1", "F2"),
             "isfreq": [False, False, False],
             "td": [2, 3, 8],
         }
