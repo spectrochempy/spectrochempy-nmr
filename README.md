@@ -115,7 +115,9 @@ non-physical. The component mapping is explicit: `RR=Re(S_R)`, `IR=Im(S_R)`,
 `RI=Re(S_I)`, and `II=Im(S_I)`. This path uses ordinary core FFTs and does not
 use quaternion storage. Time-domain input must be unmasked; masks may be
 applied to the final spectrum and are retained by component extraction and
-native NDDataset persistence.
+native NDDataset persistence. The Agilent metadata and transport operation are
+an adapter boundary; the common channel engine receives only the normalized
+3D dataset and an explicit reconstruction profile.
 
 ## Development
 

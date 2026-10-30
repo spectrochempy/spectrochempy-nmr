@@ -10,6 +10,7 @@ from spectrochempy_nmr import (
     process_agilent_noesy_states_tppi,
     process_agilent_noesy_states_tppi_channels,
 )
+from spectrochempy_nmr.processing.agilent_noesy import _process_complex_channels
 
 
 def _dataset(mask=None):
@@ -161,7 +162,7 @@ def test_noesy_components_keep_the_explicit_rr_ri_ir_ii_mapping():
     result = process_agilent_noesy_states_tppi_channels(_dataset())
     components = extract_noesy_components(result)
 
-    assert list(components) == ["RR", "IR", "RI", "II"]
+    assert list(components) == ["RR", "RI", "IR", "II"]
     assert all(component.dims == ["y", "x"] for component in components.values())
     np.testing.assert_allclose(components["RR"].data, result.data[0].real)
     np.testing.assert_allclose(components["IR"].data, result.data[0].imag)
@@ -171,6 +172,73 @@ def test_noesy_components_keep_the_explicit_rr_ri_ir_ii_mapping():
     original = result.data[0, 0, 0]
     components["RR"].data[0, 0] = 999
     assert result.data[0, 0, 0] == original
+
+
+@pytest.mark.parametrize("provenance", ["Bruker", "Agilent", "NMRPipe", "Synthetic"])
+def test_common_channel_engine_ignores_vendor_provenance(provenance):
+    source = _dataset()
+    channels = scp.NDDataset(
+        np.stack([source.data[0::2], source.data[1::2]], axis=0),
+        coordset=[
+            scp.Coord.arange(2, dims="c", labels=["branch_0", "branch_1"]),
+            scp.Coord.arange(3, dims="y"),
+            scp.Coord.arange(8, dims="x"),
+        ],
+        dims=["c", "y", "x"],
+    )
+    channels.meta.update(
+        {
+            "stage": "acquisition",
+            "component_labels": ("branch_0", "branch_1"),
+            "provenance": provenance,
+        }
+    )
+
+    result = _process_complex_channels(
+        channels,
+        reconstruction="agilent-noesy-states-tppi",
+    )
+
+    assert result.dims == ["c", "y", "x"]
+    assert result.meta.stage == "spectrum"
+    assert result.meta.component_labels == ("S_R", "S_I")
+    assert result.meta.get("provenance") is None
+    expected = _reference(source.data)
+    np.testing.assert_allclose(result.data[0].real, expected[:, :, 0], rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(result.data[1].real, expected[:, :, 1], rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(result.data[0].imag, expected[:, :, 2], rtol=2e-6, atol=2e-6)
+    np.testing.assert_allclose(result.data[1].imag, expected[:, :, 3], rtol=2e-6, atol=2e-6)
+
+
+def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
+    source = _dataset()
+    channels = scp.NDDataset(
+        np.stack([source.data[0::2], source.data[1::2]], axis=0),
+        coordset=[
+            scp.Coord.arange(2, dims="c", labels=["branch_0", "branch_1"]),
+            scp.Coord.arange(3, dims="y"),
+            scp.Coord.arange(8, dims="x"),
+        ],
+        dims=["c", "y", "x"],
+    )
+    channels.meta.stage = "acquisition"
+    calls = []
+    original_fft = scp.fft
+
+    def recording_fft(dataset, *, dim):
+        calls.append((dataset.shape, list(dataset.dims), dim))
+        return original_fft(dataset, dim=dim)
+
+    monkeypatch.setattr(scp, "fft", recording_fft)
+    _process_complex_channels(
+        channels,
+        reconstruction="agilent-noesy-states-tppi",
+    )
+
+    assert calls == [
+        ((2, 3, 8), ["c", "y", "x"], "x"),
+        ((2, 3, 8), ["c", "y", "x"], "y"),
+    ]
 
 
 def test_noesy_channels_reject_masked_time_domain_input():

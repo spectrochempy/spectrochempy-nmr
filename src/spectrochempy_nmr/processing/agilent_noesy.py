@@ -72,7 +72,7 @@ def _has_mask(dataset):
     return bool(np.any(mask))
 
 
-def _compute_noesy_channels(
+def _compute_legacy_noesy_arrays(
     dataset,
     *,
     transport,
@@ -98,6 +98,142 @@ def _compute_noesy_channels(
     c_r = e1.real - 1j * e2.real
     c_i = e1.imag - 1j * e2.imag
     return _complex_fft(c_r, axis=0), _complex_fft(c_i, axis=0), data
+
+
+def _validate_complex_channels(dataset, reconstruction):
+    """Validate the vendor-neutral input to the common channel engine."""
+    if reconstruction != "agilent-noesy-states-tppi":
+        raise ValueError(f"unsupported complex-channel reconstruction: {reconstruction}")
+    if tuple(dataset.dims) != ("c", "y", "x"):
+        raise ValueError("complex-channel input must have dimensions ('c', 'y', 'x')")
+    data = np.asarray(dataset.data)
+    if data.ndim != 3 or data.shape[0] != 2 or not np.iscomplexobj(data):
+        raise ValueError("complex-channel input must have shape (2, nF1, nF2)")
+    if _has_mask(dataset):
+        raise ValueError("complex-channel FFT processing requires unmasked input")
+    return data
+
+
+def _make_channel_dataset(data, *, labels, y_coord, x_coord, stage, meta=None):
+    """Construct a channel dataset with explicit stage and axis metadata."""
+    import spectrochempy as scp  # noqa: PLC0415
+
+    result = scp.NDDataset(
+        np.asarray(data),
+        coordset=[
+            scp.Coord.arange(2, dims="c", labels=list(labels)),
+            y_coord.copy(),
+            x_coord.copy(),
+        ],
+        dims=["c", "y", "x"],
+    )
+    result.meta.update(
+        {
+            "component_axis": "c",
+            "axis_roles": ("component", "F1", "F2"),
+            "stage": stage,
+            "component_labels": tuple(labels),
+            "reconstruction_profile": "agilent-noesy-states-tppi",
+        }
+    )
+    if meta is not None:
+        result.meta.update(meta)
+    return result
+
+
+def _process_complex_channels(dataset, *, reconstruction):
+    """Process normalized complex channels using the NDDataset 3D container."""
+    _validate_complex_channels(dataset, reconstruction)
+    import spectrochempy as scp  # noqa: PLC0415
+
+    working = dataset.copy()
+    working.meta.isfreq = [False, False, False]
+    working.meta.td = list(working.shape)
+    # The validated NOESY transport uses N * fftshift(ifft). Express that
+    # convention through the core's ordinary complex FFT identity, while
+    # retaining the complete 3D channel dataset throughout the operation.
+    f2_input = working.copy()
+    f2_input.data = np.conjugate(f2_input.data)
+    f2 = scp.fft(f2_input, dim="x")
+    f2_data = np.conjugate(np.asarray(f2.data))
+    c_r = f2_data[0].real - 1j * f2_data[1].real
+    c_i = f2_data[0].imag - 1j * f2_data[1].imag
+    interferograms = _make_channel_dataset(
+        np.stack([c_r, c_i], axis=0),
+        labels=("C_R", "C_I"),
+        y_coord=f2.coordset["y"],
+        x_coord=f2.coordset["x"],
+        stage="f1_interferograms",
+        meta={
+            "processing_profile": "agilent-noesy-states-tppi",
+            "fft_f2": True,
+            "reconstruction_f1": True,
+        },
+    )
+    interferograms.meta.isfreq = [False, False, True]
+    interferograms.meta.td = list(interferograms.shape)
+    spectrum = scp.fft(interferograms, dim="y")
+    spectrum = _make_channel_dataset(
+        np.asarray(spectrum.data),
+        labels=("S_R", "S_I"),
+        y_coord=spectrum.coordset["y"],
+        x_coord=spectrum.coordset["x"],
+        stage="spectrum",
+        meta={
+            "processing_profile": "agilent-noesy-states-tppi",
+            "fft_f2": True,
+            "reconstruction_f1": True,
+            "fft_f1": True,
+            "mathematical_component_order": ("RR", "RI", "IR", "II"),
+            "data_domain": "frequency",
+            "coordinates_status": "provisional_index",
+        },
+    )
+    spectrum.meta.update(
+        {
+            "fft_dimensions": ("x", "y"),
+        }
+    )
+    spectrum.meta.td = list(spectrum.shape)
+    spectrum.meta.isfreq = [False, True, True]
+    return spectrum
+
+
+def _agilent_channels_adapter(dataset, *, transport, ni, np_raw, arraydim, ntraces):
+    """Validate Agilent metadata and produce normalized branch channels."""
+    data = _validate_profile(dataset, ni, np_raw, arraydim, ntraces)
+    if _has_mask(dataset):
+        raise ValueError("Agilent NOESY FFT processing requires unmasked input")
+    if transport == "var2pipe":
+        data = ((-1) ** np.arange(data.shape[0]))[:, None] * np.conjugate(data)
+
+    branches = np.stack([data[0::2], data[1::2]], axis=0)
+    import spectrochempy as scp  # noqa: PLC0415
+
+    channels = scp.NDDataset(
+        branches,
+        coordset=[
+            scp.Coord.arange(2, dims="c", labels=["branch_0", "branch_1"]),
+            scp.Coord.arange(ni, dims="y"),
+            scp.Coord.arange(np_raw // 2, dims="x"),
+        ],
+        dims=["c", "y", "x"],
+    )
+    channels.meta.update(
+        {
+            "stage": "acquisition",
+            "component_axis": "c",
+            "component_labels": ("branch_0", "branch_1"),
+            "axis_roles": ("component", "F1", "F2"),
+            "processing_profile": "agilent-noesy-states-tppi",
+            "transport": transport,
+            "coordinates_status": "provisional_index",
+            "raw_shape": tuple(data.shape),
+        }
+    )
+    channels.meta.isfreq = [False, False, False]
+    channels.meta.td = list(channels.shape)
+    return channels
 
 
 def process_agilent_noesy_states_tppi(
@@ -128,7 +264,7 @@ def process_agilent_noesy_states_tppi(
     np_raw = _meta_value(meta, "np_raw", _meta_value(meta, "np", np_raw))
     arraydim = _meta_value(meta, "arraydim", arraydim)
     ntraces = _meta_value(meta, "ntraces", ntraces)
-    s_r, s_i, data = _compute_noesy_channels(
+    s_r, s_i, data = _compute_legacy_noesy_arrays(
         dataset,
         transport=transport,
         ni=ni,
@@ -211,26 +347,17 @@ def process_agilent_noesy_states_tppi_channels(
     np_raw = _meta_value(meta, "np_raw", _meta_value(meta, "np", np_raw))
     arraydim = _meta_value(meta, "arraydim", arraydim)
     ntraces = _meta_value(meta, "ntraces", ntraces)
-    s_r, s_i, raw_data = _compute_noesy_channels(
+    channels = _agilent_channels_adapter(
         dataset,
         transport=transport,
         ni=ni,
         np_raw=np_raw,
         arraydim=arraydim,
         ntraces=ntraces,
-        reject_masked=True,
     )
-
-    import spectrochempy as scp  # noqa: PLC0415
-
-    result = scp.NDDataset(
-        np.stack([s_r, s_i], axis=0),
-        coordset=[
-            scp.Coord.arange(2, dims="c", labels=["S_R", "S_I"]),
-            scp.Coord.arange(ni, dims="y"),
-            scp.Coord.arange(np_raw // 2, dims="x"),
-        ],
-        dims=["c", "y", "x"],
+    result = _process_complex_channels(
+        channels,
+        reconstruction="agilent-noesy-states-tppi",
     )
     result.meta.update(
         {
@@ -245,7 +372,7 @@ def process_agilent_noesy_states_tppi_channels(
             "coordinates_status": "provisional_index",
             "normalization": "none",
             "provenance": _meta_value(meta, "provenance"),
-            "raw_shape": tuple(raw_data.shape),
+            "raw_shape": tuple(dataset.data.shape),
             "raw_ni": int(ni),
             "raw_np": int(np_raw),
             "raw_arraydim": int(arraydim),
@@ -279,7 +406,7 @@ def extract_noesy_components(dataset):
 
     source = np.ma.array(dataset.data, mask=np.asarray(dataset.mask, dtype=bool))
     sr, si = source[0], source[1]
-    arrays = {"RR": sr.real, "IR": sr.imag, "RI": si.real, "II": si.imag}
+    arrays = {"RR": sr.real, "RI": si.real, "IR": sr.imag, "II": si.imag}
     masks = {
         "RR": np.ma.getmaskarray(sr),
         "IR": np.ma.getmaskarray(sr),
