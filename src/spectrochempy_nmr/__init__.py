@@ -651,6 +651,10 @@ def __getattr__(name: str):
         from .interop import from_interop  # noqa: PLC0415
 
         return from_interop
+    if name == "read_agilent_interop":
+        from .readers.read_agilent_interop import read_agilent_interop  # noqa: PLC0415
+
+        return read_agilent_interop
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
 
@@ -663,6 +667,7 @@ def __dir__() -> list[str]:
         "process_agilent_noesy_states_tppi_channels",
         "extract_noesy_components",
         "from_interop",
+        "read_agilent_interop",
         "read",
         "read_topspin",
         "read_agilent",

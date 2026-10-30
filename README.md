@@ -157,6 +157,25 @@ does not perform FFT, scaling, conjugation, phasing or merging. A descriptive
 established its guarantees. Existing `read_agilent`, `read_topspin` and merge
 behavior are unchanged in this experimental bridge.
 
+### Experimental Agilent interop facade
+
+The complete normalized 1D path can be exercised without replacing the public
+reader:
+
+```python
+dataset = scp.nmr.read_agilent_interop("experiment/", merge=False)
+stacked = scp.nmr.read_agilent_interop(
+    "experiment_01/", "experiment_02/", merge=True
+)
+```
+
+The facade accepts acquisition directories or direct `fid` paths, delegates
+decoding and normalization to `nmrglue-ng`, returns a `ScpObjectList` for
+multiple acquisitions with `merge=False`, and uses the existing core `stack()`
+only after compatibility checks for `merge=True`. It does not replace
+`read_agilent()`, discover arbitrary recursive directories, or interpret the
+stacked axis as spectral F1. Pseudo-2D acquisition is not implemented here.
+
 ## Development
 
 From the plugin directory, install the plugin against an installed compatible

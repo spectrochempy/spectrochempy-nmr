@@ -1,0 +1,144 @@
+"""Synthetic tests for the experimental Agilent interop facade."""
+
+from types import ModuleType, SimpleNamespace
+
+import numpy as np
+import pytest
+import spectrochempy as scp
+
+from spectrochempy_nmr import read_agilent_interop
+
+
+def _normalized(source, *, spectral_width=2000.0, points=4):
+    data = np.arange(points, dtype=np.float32) + 1j * np.arange(points, dtype=np.float32)[::-1]
+    return SimpleNamespace(
+        data=data.astype(np.complex64),
+        axes=(
+            SimpleNamespace(
+                values=np.arange(points, dtype=float) / spectral_width,
+                unit="s",
+                label="H1",
+                domain="time",
+                direction="increasing",
+                reference=None,
+            ),
+        ),
+        dimensions=("F2",),
+        physical_dimensions=("F2",),
+        domains=("time",),
+        quadrature_mode="complex-1d",
+        branch_order=("complex",),
+        normalization_state="storage-normalized",
+        normalization_profile="agilent-fid-1d-complex-v1",
+        applied_operations=(
+            {
+                "name": "decode",
+                "stage": "acquisition",
+                "input_dimensions": ("storage",),
+                "output_dimensions": ("F2",),
+                "axis": "F2",
+                "scale": None,
+                "conjugation": "none",
+                "sign": "none",
+                "permutation": None,
+                "evidence": "synthetic",
+            },
+        ),
+        provenance={"source": str(source), "format": "agilent-fid"},
+        acquisition={"spectral_width_hz": spectral_width, "dwell_time_s": 1 / spectral_width},
+        metadata={},
+        encoding=("QSIM",),
+        diagnostics=(),
+    )
+
+
+def _install_fake_nmrglue(monkeypatch, normalized_by_path):
+    interop = ModuleType("nmrglue.interop")
+
+    def read_agilent_fid(path):
+        return normalized_by_path[path]
+
+    interop.read_agilent_fid = read_agilent_fid
+    interop.normalize_agilent_fid = lambda raw: raw
+    package = ModuleType("nmrglue")
+    package.interop = interop
+    monkeypatch.setitem(__import__("sys").modules, "nmrglue", package)
+
+
+def _acquisition(tmp_path, name):
+    directory = tmp_path / name
+    directory.mkdir()
+    (directory / "fid").write_bytes(b"synthetic")
+    (directory / "procpar").write_text("synthetic")
+    return directory
+
+
+def test_facade_reads_directory_fid_and_deduplicates(monkeypatch, tmp_path):
+    directory = _acquisition(tmp_path, "one")
+    normalized = _normalized(directory)
+    _install_fake_nmrglue(monkeypatch, {str(directory.resolve()): normalized})
+
+    result = read_agilent_interop(directory, directory / "fid")
+
+    assert isinstance(result, scp.NDDataset)
+    assert result.shape == (4,)
+    assert result.meta.provenance["source"] == str(directory)
+
+
+def test_facade_merge_false_preserves_individual_order(monkeypatch, tmp_path):
+    first = _acquisition(tmp_path, "first")
+    second = _acquisition(tmp_path, "second")
+    normalized = {
+        str(first.resolve()): _normalized(first),
+        str(second.resolve()): _normalized(second),
+    }
+    _install_fake_nmrglue(monkeypatch, normalized)
+
+    result = read_agilent_interop([first, second], merge=False)
+
+    assert isinstance(result, scp.ScpObjectList)
+    assert [item.meta.provenance["source"] for item in result] == [
+        str(first),
+        str(second),
+    ]
+
+
+def test_facade_merge_true_uses_core_stack_and_records_series(monkeypatch, tmp_path):
+    first = _acquisition(tmp_path, "first")
+    second = _acquisition(tmp_path, "second")
+    normalized = {
+        str(first.resolve()): _normalized(first),
+        str(second.resolve()): _normalized(second),
+    }
+    _install_fake_nmrglue(monkeypatch, normalized)
+
+    result = read_agilent_interop(first, second, merge=True)
+
+    assert result.shape == (2, 4)
+    assert result.meta.series_kind == "independent_acquisitions"
+    assert result.meta.series_axis_role == "experimental_parameter"
+    assert result.meta.series_coordinate == "index"
+    assert result.meta.acquisition_order == (str(first), str(second))
+    assert result.history[-1].endswith("Stacked 2 normalized Agilent acquisitions")
+
+
+def test_facade_rejects_incompatible_merge_and_2d_profile(monkeypatch, tmp_path):
+    first = _acquisition(tmp_path, "first")
+    second = _acquisition(tmp_path, "second")
+    normalized = {
+        str(first.resolve()): _normalized(first, spectral_width=2000.0),
+        str(second.resolve()): _normalized(second, spectral_width=2500.0),
+    }
+    _install_fake_nmrglue(monkeypatch, normalized)
+
+    with pytest.raises(ValueError, match="spectral_width_hz"):
+        read_agilent_interop(first, second, merge=True)
+
+    (tmp_path / "two_d").mkdir()
+    (tmp_path / "two_d" / "fid").write_bytes(b"synthetic")
+    (tmp_path / "two_d" / "procpar").write_text("synthetic")
+    bad = _normalized(tmp_path / "two_d")
+    bad.data = np.zeros((2, 2), dtype=np.complex64)
+    normalized[str((tmp_path / "two_d").resolve())] = bad
+    with pytest.raises(ValueError, match="1D"):
+        read_agilent_interop(tmp_path / "two_d")
