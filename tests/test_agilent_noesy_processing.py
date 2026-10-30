@@ -62,6 +62,7 @@ def test_noesy_pipeline_matches_independent_complex_reference():
         as_float_array(result.data), expected, rtol=2e-6, atol=2e-6
     )
     assert result.meta.mathematical_component_order == ("RR", "RI", "IR", "II")
+    assert result.meta.processing_profile == "agilent-noesy-states-tppi-experimental"
     assert result.meta.raw_shape == (6, 8)
     assert result.meta.raw_ni == 3
     assert result.meta.raw_np == 16

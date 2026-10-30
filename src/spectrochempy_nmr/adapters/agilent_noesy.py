@@ -197,7 +197,7 @@ def process_agilent_noesy_states_tppi(
     result.set_coordset(scp.Coord.arange(ni), scp.Coord.arange(np_raw // 2))
     result.meta.update(
         {
-            "processing_profile": "noesy-states-tppi-experimental",
+            "processing_profile": "agilent-noesy-states-tppi-experimental",
             "transport": transport,
             "fft_dimensions": ("F2", "F1"),
             "states_pairing": "trace[2a]=phase=1; trace[2a+1]=phase=2",
