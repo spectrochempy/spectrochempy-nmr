@@ -290,7 +290,10 @@ def extract_noesy_components(dataset):
     result = {}
     for name, values in arrays.items():
         item = scp.NDDataset(
-            np.ma.array(np.asarray(values), mask=masks[name]),
+            np.ma.array(
+                np.asarray(values).copy(),
+                mask=np.asarray(masks[name], dtype=bool).copy(),
+            ),
             coordset=coords,
             dims=["y", "x"],
         )

@@ -168,6 +168,10 @@ def test_noesy_components_keep_the_explicit_rr_ri_ir_ii_mapping():
     np.testing.assert_allclose(components["RI"].data, result.data[1].real)
     np.testing.assert_allclose(components["II"].data, result.data[1].imag)
 
+    original = result.data[0, 0, 0]
+    components["RR"].data[0, 0] = 999
+    assert result.data[0, 0, 0] == original
+
 
 def test_noesy_channels_reject_masked_time_domain_input():
     mask = np.zeros((6, 8), dtype=bool)
