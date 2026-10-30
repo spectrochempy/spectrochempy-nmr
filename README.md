@@ -78,6 +78,30 @@ The compatibility aliases `scp.nmr.read_topspin(...)` and
 it is not exposed as `dataset.read_topspin(...)` or
 `dataset.nmr.read_topspin(...)`.
 
+### Experimental Agilent NOESY States-TPPI
+
+An opt-in prototype is available for explicitly annotated raw Agilent/Varian
+NOESY States data:
+
+```python
+result = scp.nmr.process_agilent_noesy_states_tppi(
+    raw_dataset,
+    transport="none",  # or explicitly "var2pipe"
+)
+```
+
+The input must declare `seqfil='NOESY'`, `phase=(1, 2)`, `ni`, `np` and
+`arraydim`, with a matching complex `(arraydim, np // 2)` matrix. The
+prototype performs two ordinary complex FFTs and assembles quaternion storage
+in the explicitly declared **mathematical** `(RR, RI, IR, II)` order. These
+labels are not a claim that the physical Agilent quadrature convention has been
+validated. It does not perform a quaternion FFT, apodization, phasing, linear
+prediction, or universal vendor interpretation. Other Agilent sequences and
+encodings are rejected. This is experimental and is not part of the validated
+public processing workflow. The input must also declare `ntraces=1`; returned
+coordinates are provisional index coordinates and are not a calibrated physical
+frequency claim. Raw acquisition values are retained under `raw_acquisition`.
+
 ## Development
 
 From the plugin directory, install the plugin against an installed compatible

@@ -629,6 +629,12 @@ def __getattr__(name: str):
         from .experiment import Experiment  # noqa: PLC0415
 
         return Experiment
+    if name == "process_agilent_noesy_states_tppi":
+        from .processing.agilent_noesy import (  # noqa: PLC0415
+            process_agilent_noesy_states_tppi,
+        )
+
+        return process_agilent_noesy_states_tppi
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
 
@@ -637,6 +643,7 @@ def __dir__() -> list[str]:
     return [
         "NMRPlugin",
         "Experiment",
+        "process_agilent_noesy_states_tppi",
         "read",
         "read_topspin",
         "read_agilent",
