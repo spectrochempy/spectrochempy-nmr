@@ -16,6 +16,15 @@ def _normalized(values=None, *, axis_values=None, sequence="NOESY"):
         values=axis_values,
         unit="s" if axis_values is not None else None,
         label="H1",
+        domain="time",
+        direction="increasing",
+        reference=SimpleNamespace(
+            observation_frequency=125.0,
+            observation_frequency_unit="MHz",
+            offset=None,
+            offset_unit=None,
+            source="acquisition",
+        ),
     )
     return SimpleNamespace(
         data=values,
@@ -65,6 +74,8 @@ def test_from_interop_converts_complex_fid_without_mutating_source():
     assert result.meta.provenance["vendor"] == "Agilent"
     assert result.meta.acquisition["spectral_width_hz"] == 2000.0
     assert result.meta.source_metadata["raw"] == "descriptive"
+    assert result.meta.interop_axes[0]["direction"] == "increasing"
+    assert result.meta.interop_axes[0]["reference"]["observation_frequency"] == 125.0
     assert result.meta.applied_operations[0]["name"] == "decode"
     result.data[0] = 99 + 99j
     assert source.data[0] == before[0]
@@ -90,4 +101,9 @@ def test_from_interop_rejects_descriptive_result_and_invalid_contract():
     invalid = _normalized()
     invalid.domains = ("frequency",)
     with pytest.raises(ValueError, match="time domain"):
+        from_interop(invalid)
+
+    invalid = _normalized()
+    invalid.applied_operations = ({},)
+    with pytest.raises(ValueError, match="operation"):
         from_interop(invalid)

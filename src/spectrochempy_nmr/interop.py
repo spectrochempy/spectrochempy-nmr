@@ -7,6 +7,20 @@ from collections.abc import Mapping
 import numpy as np
 
 
+_OPERATION_KEYS = {
+    "name",
+    "stage",
+    "input_dimensions",
+    "output_dimensions",
+    "axis",
+    "scale",
+    "conjugation",
+    "sign",
+    "permutation",
+    "evidence",
+}
+
+
 def _axis_coordinate(axis, size, dim):
     import spectrochempy as scp  # noqa: PLC0415
 
@@ -19,7 +33,33 @@ def _axis_coordinate(axis, size, dim):
 
 
 def _interop_metadata(result):
-    operations = tuple(dict(operation) for operation in result.applied_operations)
+    operations = []
+    for operation in result.applied_operations:
+        if not isinstance(operation, Mapping) or not _OPERATION_KEYS <= set(operation):
+            raise ValueError("normalized operation does not satisfy its schema")
+        operations.append(dict(operation))
+    axes = []
+    for axis in result.axes:
+        reference = getattr(axis, "reference", None)
+        axes.append(
+            {
+                "label": axis.label,
+                "unit": axis.unit,
+                "domain": axis.domain,
+                "direction": axis.direction,
+                "reference": (
+                    {
+                        "observation_frequency": reference.observation_frequency,
+                        "observation_frequency_unit": reference.observation_frequency_unit,
+                        "offset": reference.offset,
+                        "offset_unit": reference.offset_unit,
+                        "source": reference.source,
+                    }
+                    if reference is not None
+                    else None
+                ),
+            }
+        )
     return {
         "normalization_profile": result.normalization_profile,
         "normalization_state": result.normalization_state,
@@ -31,9 +71,10 @@ def _interop_metadata(result):
         "interop_encoding": tuple(result.encoding),
         "provenance": dict(result.provenance),
         "acquisition": dict(result.acquisition),
-        "applied_operations": operations,
+        "applied_operations": tuple(operations),
         "diagnostics": tuple(result.diagnostics),
         "source_metadata": dict(result.metadata),
+        "interop_axes": tuple(axes),
     }
 
 
