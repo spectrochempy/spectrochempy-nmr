@@ -10,7 +10,7 @@ from spectrochempy_nmr import (
     process_agilent_noesy_states_tppi,
     process_agilent_noesy_states_tppi_channels,
 )
-from spectrochempy_nmr.processing.agilent_noesy import _process_complex_channels
+from spectrochempy_nmr.processing.complex_channels import process_complex_channels
 
 
 def _dataset(mask=None):
@@ -204,7 +204,7 @@ def test_common_channel_engine_ignores_vendor_provenance(provenance):
         }
     )
 
-    result = _process_complex_channels(
+    result = process_complex_channels(
         channels,
         reconstruction="noesy-states-tppi",
     )
@@ -258,7 +258,7 @@ def test_common_channel_engine_rejects_non_acquisition_contract(changes):
     channels.meta.update(changes)
 
     with pytest.raises(ValueError):
-        _process_complex_channels(channels, reconstruction="noesy-states-tppi")
+        process_complex_channels(channels, reconstruction="noesy-states-tppi")
 
 
 def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
@@ -290,7 +290,7 @@ def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
         return original_fft(dataset, dim=dim)
 
     monkeypatch.setattr(scp, "fft", recording_fft)
-    _process_complex_channels(
+    process_complex_channels(
         channels,
         reconstruction="noesy-states-tppi",
     )

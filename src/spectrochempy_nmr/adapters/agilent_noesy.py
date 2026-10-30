@@ -1,11 +1,11 @@
-"""Experimental Agilent NOESY States-TPPI processing prototype."""
+"""Temporary Agilent-specific adapters for experimental NOESY processing."""
 
 from __future__ import annotations
 
 import numpy as np
 
-
-_RECONSTRUCTION_PROFILE = "noesy-states-tppi"
+from ..processing.complex_channels import process_complex_channels
+from ..processing.quadrature import NOESY_STATES_TPPI
 
 
 def _meta_value(meta, key, default=None):
@@ -103,145 +103,6 @@ def _compute_legacy_noesy_arrays(
     return _complex_fft(c_r, axis=0), _complex_fft(c_i, axis=0), data
 
 
-def _validate_complex_channels(dataset, reconstruction):
-    """Validate the vendor-neutral input to the common channel engine."""
-    if reconstruction != _RECONSTRUCTION_PROFILE:
-        raise ValueError(f"unsupported complex-channel reconstruction: {reconstruction}")
-    if tuple(dataset.dims) != ("c", "y", "x"):
-        raise ValueError("complex-channel input must have dimensions ('c', 'y', 'x')")
-    data = np.asarray(dataset.data)
-    if data.ndim != 3 or data.shape[0] != 2 or not np.iscomplexobj(data):
-        raise ValueError("complex-channel input must have shape (2, nF1, nF2)")
-    if _meta_value(dataset.meta, "component_axis") != "c":
-        raise ValueError("complex-channel input must declare component_axis='c'")
-    axis_roles = _meta_value(dataset.meta, "axis_roles")
-    if (tuple(axis_roles) if axis_roles is not None else ()) != (
-        "component",
-        "F1",
-        "F2",
-    ):
-        raise ValueError("complex-channel input must declare component, F1 and F2 axis roles")
-    if _meta_value(dataset.meta, "stage") != "acquisition":
-        raise ValueError("complex-channel input must have stage='acquisition'")
-    labels = _meta_value(dataset.meta, "component_labels")
-    if (tuple(labels) if labels is not None else ()) != ("branch_0", "branch_1"):
-        raise ValueError("complex-channel input must label branches branch_0 and branch_1")
-    channel_labels = dataset.coordset["c"].labels
-    if channel_labels is None or tuple(str(label) for label in channel_labels) != (
-        "branch_0",
-        "branch_1",
-    ):
-        raise ValueError("complex-channel coordinate labels must identify both branches")
-    isfreq = _meta_value(dataset.meta, "isfreq")
-    if list(isfreq or ()) != [False, False, False]:
-        raise ValueError("complex-channel input must be in the time domain")
-    td = _meta_value(dataset.meta, "td")
-    if list(td or ()) != list(data.shape):
-        raise ValueError("complex-channel td metadata must match the dataset shape")
-    if _meta_value(dataset.meta, "encoding") not in (None, ""):
-        raise ValueError("complex-channel input must not carry an active FFT encoding")
-    if _has_mask(dataset):
-        raise ValueError("complex-channel FFT processing requires unmasked input")
-    return data
-
-
-def _carried_metadata(dataset):
-    """Return descriptive normalized-input metadata without interpreting it."""
-    carried = {}
-    for key in ("provenance", "acquisition", "normalization"):
-        value = _meta_value(dataset.meta, key)
-        if value is not None:
-            carried[key] = value
-    return carried
-
-
-def _make_channel_dataset(data, *, labels, y_coord, x_coord, stage, meta=None):
-    """Construct a channel dataset with explicit stage and axis metadata."""
-    import spectrochempy as scp  # noqa: PLC0415
-
-    result = scp.NDDataset(
-        np.asarray(data),
-        coordset=[
-            scp.Coord.arange(2, dims="c", labels=list(labels)),
-            y_coord.copy(),
-            x_coord.copy(),
-        ],
-        dims=["c", "y", "x"],
-    )
-    result.meta.update(
-        {
-            "component_axis": "c",
-            "axis_roles": ("component", "F1", "F2"),
-            "stage": stage,
-            "component_labels": tuple(labels),
-            "reconstruction_profile": _RECONSTRUCTION_PROFILE,
-        }
-    )
-    if meta is not None:
-        result.meta.update(meta)
-    return result
-
-
-def _process_complex_channels(dataset, *, reconstruction):
-    """Process normalized complex channels using the NDDataset 3D container."""
-    _validate_complex_channels(dataset, reconstruction)
-    import spectrochempy as scp  # noqa: PLC0415
-
-    working = dataset.copy()
-    working.meta.td = list(working.shape)
-    carried = _carried_metadata(dataset)
-    # The validated NOESY transport uses N * fftshift(ifft). Express that
-    # convention through the core's ordinary complex FFT identity, while
-    # retaining the complete 3D channel dataset throughout the operation.
-    f2_input = working.copy()
-    f2_input.data = np.conjugate(f2_input.data)
-    f2 = scp.fft(f2_input, dim="x")
-    f2_data = np.conjugate(np.asarray(f2.data))
-    c_r = f2_data[0].real - 1j * f2_data[1].real
-    c_i = f2_data[0].imag - 1j * f2_data[1].imag
-    interferograms = _make_channel_dataset(
-        np.stack([c_r, c_i], axis=0),
-        labels=("C_R", "C_I"),
-        y_coord=f2.coordset["y"],
-        x_coord=f2.coordset["x"],
-        stage="f1_interferograms",
-        meta={
-            "processing_profile": _RECONSTRUCTION_PROFILE,
-            "fft_f2": True,
-            "reconstruction_f1": True,
-            **carried,
-        },
-    )
-    interferograms.meta.isfreq = [False, False, True]
-    interferograms.meta.td = list(interferograms.shape)
-    spectrum = scp.fft(interferograms, dim="y")
-    spectrum = _make_channel_dataset(
-        np.asarray(spectrum.data),
-        labels=("S_R", "S_I"),
-        y_coord=spectrum.coordset["y"],
-        x_coord=spectrum.coordset["x"],
-        stage="spectrum",
-        meta={
-            "processing_profile": _RECONSTRUCTION_PROFILE,
-            "fft_f2": True,
-            "reconstruction_f1": True,
-            "fft_f1": True,
-            "mathematical_component_order": ("RR", "RI", "IR", "II"),
-            "data_domain": "frequency",
-            "coordinates_status": "provisional_index",
-            **carried,
-        },
-    )
-    spectrum.meta.update(
-        {
-            "fft_dimensions": ("x", "y"),
-        }
-    )
-    spectrum.meta.td = list(spectrum.shape)
-    spectrum.meta.isfreq = [False, True, True]
-    return spectrum
-
-
 def _agilent_channels_adapter(dataset, *, transport, ni, np_raw, arraydim, ntraces):
     """Validate Agilent metadata and produce normalized branch channels."""
     data = _validate_profile(dataset, ni, np_raw, arraydim, ntraces)
@@ -268,7 +129,7 @@ def _agilent_channels_adapter(dataset, *, transport, ni, np_raw, arraydim, ntrac
             "component_axis": "c",
             "component_labels": ("branch_0", "branch_1"),
             "axis_roles": ("component", "F1", "F2"),
-            "processing_profile": _RECONSTRUCTION_PROFILE,
+            "processing_profile": NOESY_STATES_TPPI,
             "transport": transport,
             "coordinates_status": "provisional_index",
             "raw_shape": tuple(data.shape),
@@ -336,7 +197,7 @@ def process_agilent_noesy_states_tppi(
     result.set_coordset(scp.Coord.arange(ni), scp.Coord.arange(np_raw // 2))
     result.meta.update(
         {
-            "processing_profile": "agilent-noesy-states-tppi-experimental",
+            "processing_profile": "noesy-states-tppi-experimental",
             "transport": transport,
             "fft_dimensions": ("F2", "F1"),
             "states_pairing": "trace[2a]=phase=1; trace[2a+1]=phase=2",
@@ -401,13 +262,13 @@ def process_agilent_noesy_states_tppi_channels(
         arraydim=arraydim,
         ntraces=ntraces,
     )
-    result = _process_complex_channels(
+    result = process_complex_channels(
         channels,
-        reconstruction=_RECONSTRUCTION_PROFILE,
+        reconstruction=NOESY_STATES_TPPI,
     )
     result.meta.update(
         {
-            "processing_profile": "agilent-noesy-states-tppi-experimental",
+            "processing_profile": "noesy-states-tppi-experimental",
             "stage": "spectrum",
             "transport": transport,
             "component_axis": "c",
@@ -436,47 +297,4 @@ def process_agilent_noesy_states_tppi_channels(
     )
     result.meta.td = [2, int(ni), int(np_raw // 2)]
     result.meta.isfreq = [False, True, True]
-    return result
-
-
-def extract_noesy_components(dataset):
-    """Return ``RR``, ``RI``, ``IR`` and ``II`` as independent 2D datasets."""
-    if tuple(dataset.dims) != ("c", "y", "x"):
-        raise ValueError("NOESY channel dataset must have dimensions ('c', 'y', 'x')")
-    if _meta_value(dataset.meta, "stage") != "spectrum":
-        raise ValueError("NOESY components require a spectrum-stage dataset")
-    if tuple(_meta_value(dataset.meta, "component_labels", ())) != ("S_R", "S_I"):
-        raise ValueError("NOESY spectrum channels must be labelled S_R and S_I")
-
-    import spectrochempy as scp  # noqa: PLC0415
-
-    source = np.ma.array(dataset.data, mask=np.asarray(dataset.mask, dtype=bool))
-    sr, si = source[0], source[1]
-    arrays = {"RR": sr.real, "RI": si.real, "IR": sr.imag, "II": si.imag}
-    masks = {
-        "RR": np.ma.getmaskarray(sr),
-        "IR": np.ma.getmaskarray(sr),
-        "RI": np.ma.getmaskarray(si),
-        "II": np.ma.getmaskarray(si),
-    }
-    coords = [dataset.coordset["y"].copy(), dataset.coordset["x"].copy()]
-    result = {}
-    for name, values in arrays.items():
-        item = scp.NDDataset(
-            np.ma.array(
-                np.asarray(values).copy(),
-                mask=np.asarray(masks[name], dtype=bool).copy(),
-            ),
-            coordset=coords,
-            dims=["y", "x"],
-        )
-        item.meta.update(
-            {
-                "stage": "spectrum_component",
-                "component": name,
-                "component_source": "S_R" if name in ("RR", "IR") else "S_I",
-                "profile": _meta_value(dataset.meta, "processing_profile"),
-            }
-        )
-        result[name] = item
     return result
