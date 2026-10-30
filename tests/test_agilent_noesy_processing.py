@@ -10,7 +10,7 @@ from spectrochempy_nmr import (
     process_agilent_noesy_states_tppi,
     process_agilent_noesy_states_tppi_channels,
 )
-from spectrochempy_nmr.processing.agilent_noesy import _process_complex_channels
+from spectrochempy_nmr.processing.complex_channels import process_complex_channels
 
 
 def _dataset(mask=None):
@@ -62,6 +62,7 @@ def test_noesy_pipeline_matches_independent_complex_reference():
         as_float_array(result.data), expected, rtol=2e-6, atol=2e-6
     )
     assert result.meta.mathematical_component_order == ("RR", "RI", "IR", "II")
+    assert result.meta.processing_profile == "agilent-noesy-states-tppi-experimental"
     assert result.meta.raw_shape == (6, 8)
     assert result.meta.raw_ni == 3
     assert result.meta.raw_np == 16
@@ -152,6 +153,11 @@ def test_noesy_channels_match_independent_reference_and_have_explicit_contract()
     assert result.meta.component_axis == "c"
     assert result.meta.axis_roles == ("component", "F1", "F2")
     assert result.meta.component_labels == ("S_R", "S_I")
+    assert result.meta.quadrature_mode == "states-tppi"
+    assert result.meta.branch_order == ("E1", "E2")
+    assert result.meta.f1coef == (1, 0, 0, 0, 0, 0, -1, 0)
+    assert result.meta.sequence == "NOESY"
+    assert result.meta.vendor == "Agilent"
     assert result.meta.provenance == "Synthetic"
     assert result.meta.acquisition == {"mode": "normalized"}
     assert result.meta.normalization == "validated-raw"
@@ -196,6 +202,12 @@ def test_common_channel_engine_ignores_vendor_provenance(provenance):
             "component_labels": ("branch_0", "branch_1"),
             "component_axis": "c",
             "axis_roles": ("component", "F1", "F2"),
+            "quadrature_mode": "states-tppi",
+            "branch_order": ("E1", "E2"),
+            "f1coef": (1, 0, 0, 0, 0, 0, -1, 0),
+            "tppi_alternation_state": "encoded",
+            "normalization_state": "normalized",
+            "f2_convention": "centered-inverse-unscaled",
             "provenance": provenance,
             "acquisition": {"mode": "normalized"},
             "normalization": "validated-branches",
@@ -204,9 +216,9 @@ def test_common_channel_engine_ignores_vendor_provenance(provenance):
         }
     )
 
-    result = _process_complex_channels(
+    result = process_complex_channels(
         channels,
-        reconstruction="noesy-states-tppi",
+        reconstruction="states-tppi",
     )
 
     assert result.dims == ["c", "y", "x"]
@@ -232,6 +244,7 @@ def test_common_channel_engine_ignores_vendor_provenance(provenance):
         {"isfreq": [False, True, False]},
         {"td": [2, 3, 7]},
         {"encoding": "states-tppi"},
+        {"quadrature_mode": "unknown"},
     ],
 )
 def test_common_channel_engine_rejects_non_acquisition_contract(changes):
@@ -251,6 +264,12 @@ def test_common_channel_engine_rejects_non_acquisition_contract(changes):
             "component_labels": ("branch_0", "branch_1"),
             "component_axis": "c",
             "axis_roles": ("component", "F1", "F2"),
+            "quadrature_mode": "states-tppi",
+            "branch_order": ("E1", "E2"),
+            "f1coef": (1, 0, 0, 0, 0, 0, -1, 0),
+            "tppi_alternation_state": "encoded",
+            "normalization_state": "normalized",
+            "f2_convention": "centered-inverse-unscaled",
             "isfreq": [False, False, False],
             "td": [2, 3, 8],
         }
@@ -258,7 +277,7 @@ def test_common_channel_engine_rejects_non_acquisition_contract(changes):
     channels.meta.update(changes)
 
     with pytest.raises(ValueError):
-        _process_complex_channels(channels, reconstruction="noesy-states-tppi")
+        process_complex_channels(channels, reconstruction="states-tppi")
 
 
 def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
@@ -278,6 +297,12 @@ def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
             "component_labels": ("branch_0", "branch_1"),
             "component_axis": "c",
             "axis_roles": ("component", "F1", "F2"),
+            "quadrature_mode": "states-tppi",
+            "branch_order": ("E1", "E2"),
+            "f1coef": (1, 0, 0, 0, 0, 0, -1, 0),
+            "tppi_alternation_state": "encoded",
+            "normalization_state": "normalized",
+            "f2_convention": "centered-inverse-unscaled",
             "isfreq": [False, False, False],
             "td": [2, 3, 8],
         }
@@ -290,9 +315,9 @@ def test_common_channel_engine_runs_both_ffts_on_the_3d_dataset(monkeypatch):
         return original_fft(dataset, dim=dim)
 
     monkeypatch.setattr(scp, "fft", recording_fft)
-    _process_complex_channels(
+    process_complex_channels(
         channels,
-        reconstruction="noesy-states-tppi",
+        reconstruction="states-tppi",
     )
 
     assert calls == [

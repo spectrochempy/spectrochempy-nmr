@@ -630,21 +630,23 @@ def __getattr__(name: str):
 
         return Experiment
     if name == "process_agilent_noesy_states_tppi":
-        from .processing.agilent_noesy import (  # noqa: PLC0415
+        from .adapters.agilent_noesy import (  # noqa: PLC0415
             process_agilent_noesy_states_tppi,
         )
 
         return process_agilent_noesy_states_tppi
     if name == "process_agilent_noesy_states_tppi_channels":
-        from .processing.agilent_noesy import (  # noqa: PLC0415
+        from .adapters.agilent_noesy import (  # noqa: PLC0415
             process_agilent_noesy_states_tppi_channels,
         )
 
         return process_agilent_noesy_states_tppi_channels
     if name == "extract_noesy_components":
-        from .processing.agilent_noesy import extract_noesy_components  # noqa: PLC0415
+        from .processing.complex_channels import (  # noqa: PLC0415
+            extract_complex_components,
+        )
 
-        return extract_noesy_components
+        return extract_complex_components
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
 
