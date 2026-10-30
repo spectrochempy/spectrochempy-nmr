@@ -6,6 +6,9 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.13"
+  jobs:
+    pre_build:
+      - python docs/fetch_gallery_data.py
 
 sphinx:
   configuration: docs/conf.py
