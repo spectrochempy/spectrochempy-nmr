@@ -43,8 +43,8 @@ subproject_associated = false
 [fixtures]
 repository = "https://github.com/spectrochempy/spectrochempy_data"
 commit = "08bb9b0cbff8f4363c48b6bff7ccb743f8140e0a"
-files = 14
-bytes = 413429
+files = 16
+bytes = 417443
 license = "CC BY 4.0"
 
 [audit]

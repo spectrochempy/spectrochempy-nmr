@@ -11,7 +11,7 @@ the TopSpin 1D and relaxation measurements as LCS data released under CC BY
 `__index__` files are intentionally not fetched because they are excluded from
 that grant or are generated metadata.
 
-The selected files total 413,429 bytes (approximately 404 KiB). The fetch is performed only by
+The selected files total 417,443 bytes (approximately 408 KiB). The fetch is performed only by
 the RTD pre-build job and can be run locally with::
 
    python docs/fetch_gallery_data.py

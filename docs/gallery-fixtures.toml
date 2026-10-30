@@ -55,6 +55,14 @@ path = "nmrdata/bruker/tests/nmr/relax/100/acqus"
 sha256 = "8bbebeb81f3570378d371f480ba4365629560d46baa218b20a117fb6537576e4"
 size = 7418
 [[files]]
+path = "nmrdata/bruker/tests/nmr/relax/100/pdata/1/proc"
+sha256 = "65712e66e165999c83da9176f7c4db66d7e17bf8fa3ccf30daad2d7b06d6edcc"
+size = 2005
+[[files]]
+path = "nmrdata/bruker/tests/nmr/relax/100/pdata/1/procs"
+sha256 = "8b32bd54e4e223753294c778a7bf62a83e6f791bfd838f870c0f93208922da33"
+size = 2009
+[[files]]
 path = "nmrdata/bruker/tests/nmr/relax/100/ser"
 sha256 = "510e264c8bf2f68449a4d1108cf28a63cdd0642299266a83cfb5d188ccef3597"
 size = 147456
