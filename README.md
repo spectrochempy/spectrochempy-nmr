@@ -102,6 +102,23 @@ public processing workflow. The input must also declare `ntraces=1`; returned
 coordinates are provisional index coordinates and are not a calibrated physical
 frequency claim. Raw acquisition values are retained under `raw_acquisition`.
 
+The first vendor-neutral channel representation is also available:
+
+```python
+channels = scp.nmr.process_agilent_noesy_states_tppi_channels(raw_dataset)
+components = scp.nmr.extract_noesy_components(channels)
+```
+
+`channels` is a standard complex `NDDataset` with dimensions `("c", "y",
+"x")` and channel labels `S_R`, `S_I`. The `c` axis is mathematical and
+non-physical. The component mapping is explicit: `RR=Re(S_R)`, `IR=Im(S_R)`,
+`RI=Re(S_I)`, and `II=Im(S_I)`. This path uses ordinary core FFTs and does not
+use quaternion storage. Time-domain input must be unmasked; masks may be
+applied to the final spectrum and are retained by component extraction and
+native NDDataset persistence. The Agilent metadata and transport operation are
+an adapter boundary; the common channel engine receives only the normalized
+3D dataset and an explicit reconstruction profile.
+
 ## Development
 
 From the plugin directory, install the plugin against an installed compatible
