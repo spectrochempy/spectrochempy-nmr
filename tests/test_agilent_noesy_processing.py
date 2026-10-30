@@ -178,6 +178,18 @@ def test_noesy_channels_reject_masked_time_domain_input():
         process_agilent_noesy_states_tppi_channels(source)
 
 
+def test_legacy_noesy_pipeline_keeps_existing_masked_input_behavior():
+    mask = np.zeros((6, 8), dtype=bool)
+    mask[0, 0] = True
+    source = _dataset(mask)
+
+    result = process_agilent_noesy_states_tppi(source)
+
+    np.testing.assert_allclose(
+        as_float_array(result.data), _reference(source.data), rtol=2e-6, atol=2e-6
+    )
+
+
 def test_noesy_spectral_masks_survive_components_and_persistence(tmp_path):
     result = process_agilent_noesy_states_tppi_channels(_dataset())
     mask = np.zeros(result.shape, dtype=bool)

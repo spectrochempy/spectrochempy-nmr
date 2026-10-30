@@ -72,10 +72,19 @@ def _has_mask(dataset):
     return bool(np.any(mask))
 
 
-def _compute_noesy_channels(dataset, *, transport, ni, np_raw, arraydim, ntraces):
+def _compute_noesy_channels(
+    dataset,
+    *,
+    transport,
+    ni,
+    np_raw,
+    arraydim,
+    ntraces,
+    reject_masked=False,
+):
     """Compute the validated NOESY channel arrays without a storage choice."""
     data = _validate_profile(dataset, ni, np_raw, arraydim, ntraces)
-    if _has_mask(dataset):
+    if reject_masked and _has_mask(dataset):
         raise ValueError("Agilent NOESY FFT processing requires unmasked input")
 
     if transport == "var2pipe":
@@ -209,6 +218,7 @@ def process_agilent_noesy_states_tppi_channels(
         np_raw=np_raw,
         arraydim=arraydim,
         ntraces=ntraces,
+        reject_masked=True,
     )
 
     import spectrochempy as scp  # noqa: PLC0415
