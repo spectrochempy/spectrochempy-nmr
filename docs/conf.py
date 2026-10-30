@@ -139,5 +139,5 @@ sphinx_gallery_conf = {
     "reference_url": {"spectrochempy": core_docs_url + "/"},
 }
 
-if os.environ.get("NMR_DOCS_EXECUTE"):
+if os.environ.get("NMR_DOCS_EXECUTE") == "1":
     sphinx_gallery_conf["plot_gallery"] = True
