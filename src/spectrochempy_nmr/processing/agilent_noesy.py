@@ -407,7 +407,7 @@ def process_agilent_noesy_states_tppi_channels(
             "mathematical_component_order": ("RR", "RI", "IR", "II"),
             "data_domain": "frequency",
             "coordinates_status": "provisional_index",
-            "normalization": "none",
+            "normalization": _meta_value(result.meta, "normalization", "none"),
             "provenance": _meta_value(meta, "provenance"),
             "raw_shape": tuple(dataset.data.shape),
             "raw_ni": int(ni),

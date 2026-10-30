@@ -138,6 +138,8 @@ def test_noesy_pipeline_out_of_place_preserves_input_metadata():
 def test_noesy_channels_match_independent_reference_and_have_explicit_contract():
     source = _dataset()
     source.meta.provenance = "Synthetic"
+    source.meta.acquisition = {"mode": "normalized"}
+    source.meta.normalization = "validated-raw"
     expected = _reference(source.data)
 
     result = process_agilent_noesy_states_tppi_channels(source)
@@ -151,6 +153,8 @@ def test_noesy_channels_match_independent_reference_and_have_explicit_contract()
     assert result.meta.axis_roles == ("component", "F1", "F2")
     assert result.meta.component_labels == ("S_R", "S_I")
     assert result.meta.provenance == "Synthetic"
+    assert result.meta.acquisition == {"mode": "normalized"}
+    assert result.meta.normalization == "validated-raw"
     np.testing.assert_allclose(result.data[0].real, expected[:, :, 0], rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(result.data[1].real, expected[:, :, 1], rtol=2e-6, atol=2e-6)
     np.testing.assert_allclose(result.data[0].imag, expected[:, :, 2], rtol=2e-6, atol=2e-6)
