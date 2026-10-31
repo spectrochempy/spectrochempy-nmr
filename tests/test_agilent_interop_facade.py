@@ -145,6 +145,24 @@ def test_facade_merge_true_uses_core_stack_and_records_series(monkeypatch, tmp_p
         str(second.resolve()): _normalized(second),
     }
     _install_fake_nmrglue(monkeypatch, normalized)
+    source_snapshots = []
+    original_stack = scp.stack
+
+    def recording_stack(*datasets):
+        source_snapshots.extend(
+            (dataset.data.copy(), dict(dataset.meta.provenance), dict(dataset.meta.acquisition))
+            for dataset in datasets
+        )
+        result = original_stack(*datasets)
+        for dataset, (data, provenance, acquisition) in zip(
+            datasets, source_snapshots, strict=True
+        ):
+            np.testing.assert_array_equal(dataset.data, data)
+            assert dict(dataset.meta.provenance) == provenance
+            assert dict(dataset.meta.acquisition) == acquisition
+        return result
+
+    monkeypatch.setattr(scp, "stack", recording_stack)
 
     result = read_agilent_interop(first, second, merge=True)
 
@@ -160,6 +178,7 @@ def test_facade_merge_true_uses_core_stack_and_records_series(monkeypatch, tmp_p
     assert result.meta.individual_normalization_history[0]["axes"][0]["reference"]["observation_frequency"] == 125.0
     assert result.meta.individual_normalization_history[0]["diagnostics"][0]["code"] == "acquisition.note"
     assert result.meta.individual_normalization_history[0]["domains"] == ("time",)
+    assert len(source_snapshots) == 2
     assert result.history[-1].endswith("Stacked 2 normalized Agilent acquisitions")
 
 
