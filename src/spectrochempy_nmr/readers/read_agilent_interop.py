@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -41,6 +42,15 @@ def _acquisition_paths(paths, *, directory=None):
 def _known_equal(first, second):
     if first is None or second is None:
         return True
+    if isinstance(first, Mapping) and isinstance(second, Mapping):
+        for key in set(first) & set(second):
+            if not _known_equal(first[key], second[key]):
+                return False
+        return True
+    if isinstance(first, (tuple, list)) and isinstance(second, (tuple, list)):
+        return len(first) == len(second) and all(
+            _known_equal(left, right) for left, right in zip(first, second, strict=True)
+        )
     if isinstance(first, np.ndarray) or isinstance(second, np.ndarray):
         return np.array_equal(first, second)
     return first == second
@@ -61,12 +71,21 @@ def _validate_merge_compatibility(datasets):
             "spectral_width_hz",
             "dwell_time_s",
             "observation_frequency_mhz",
+            "carrier_hz",
+            "carrier_ppm",
+            "carrier_source",
+            "original_reference",
             "nucleus",
         ):
             if not _known_equal(
                 dataset.meta.acquisition.get(key), reference.meta.acquisition.get(key)
             ):
                 raise ValueError(f"Agilent acquisitions have incompatible acquisition {key}")
+        for key in ("interop_axes", "interop_domains", "interop_encoding"):
+            if not _known_equal(
+                getattr(dataset.meta, key, None), getattr(reference.meta, key, None)
+            ):
+                raise ValueError(f"Agilent acquisitions have incompatible {key}")
         for dim in dataset.dims:
             left = dataset.coordset[dim]
             right = reference.coordset[dim]
@@ -80,7 +99,9 @@ def _validate_merge_compatibility(datasets):
             "normalization_profile",
             "normalization_state",
             "quadrature_mode",
+            "branch_order",
             "axis_roles",
+            "applied_operations",
         ):
             if getattr(dataset.meta, key, None) != getattr(reference.meta, key, None):
                 raise ValueError(f"Agilent acquisitions have incompatible {key}")
@@ -91,9 +112,14 @@ def _stack_datasets(datasets):
 
     _validate_merge_compatibility(datasets)
     result = scp.stack(*datasets)
+    reference = datasets[0]
     result.meta.series_kind = "independent_acquisitions"
-    result.meta.series_axis_role = "experimental_parameter"
+    result.meta.series_axis_role = "acquisition_index"
     result.meta.series_coordinate = "index"
+    result.meta.normalization_state = reference.meta.normalization_state
+    result.meta.normalization_profile = reference.meta.normalization_profile
+    result.meta.quadrature_mode = reference.meta.quadrature_mode
+    result.meta.branch_order = reference.meta.branch_order
     result.meta.acquisition_order = tuple(
         dataset.meta.provenance.get("source") for dataset in datasets
     )
@@ -102,6 +128,22 @@ def _stack_datasets(datasets):
     )
     result.meta.individual_acquisition = tuple(
         dict(dataset.meta.acquisition) for dataset in datasets
+    )
+    result.meta.individual_normalization_history = tuple(
+        {
+            "state": dataset.meta.normalization_state,
+            "profile": dataset.meta.normalization_profile,
+            "quadrature_mode": dataset.meta.quadrature_mode,
+            "branch_order": dataset.meta.branch_order,
+            "dimensions": dataset.meta.interop_dimensions,
+            "physical_dimensions": dataset.meta.interop_physical_dimensions,
+            "domains": dataset.meta.interop_domains,
+            "operations": dataset.meta.applied_operations,
+            "diagnostics": dataset.meta.diagnostics,
+            "axes": dataset.meta.interop_axes,
+            "encoding": dataset.meta.interop_encoding,
+        }
+        for dataset in datasets
     )
     result.history = f"Stacked {len(datasets)} normalized Agilent acquisitions"
     return result

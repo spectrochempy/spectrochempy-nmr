@@ -174,7 +174,11 @@ decoding and normalization to `nmrglue-ng`, returns a `ScpObjectList` for
 multiple acquisitions with `merge=False`, and uses the existing core `stack()`
 only after compatibility checks for `merge=True`. It does not replace
 `read_agilent()`, discover arbitrary recursive directories, or interpret the
-stacked axis as spectral F1. Pseudo-2D acquisition is not implemented here.
+stacked axis as spectral F1. Its role is `acquisition_index` unless a
+validated experimental parameter is supplied by a future extension.
+Pseudo-2D acquisition is not implemented here. Stacked output retains the
+shared normalization contract and each acquisition's individual provenance,
+operation history, diagnostics, axis references and encoding.
 
 ## Development
 

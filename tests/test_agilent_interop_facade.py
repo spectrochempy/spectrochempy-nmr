@@ -9,7 +9,7 @@ import spectrochempy as scp
 from spectrochempy_nmr import read_agilent_interop
 
 
-def _normalized(source, *, spectral_width=2000.0, points=4):
+def _normalized(source, *, spectral_width=2000.0, observation_frequency=125.0, points=4):
     data = np.arange(points, dtype=np.float32) + 1j * np.arange(points, dtype=np.float32)[::-1]
     return SimpleNamespace(
         data=data.astype(np.complex64),
@@ -20,7 +20,13 @@ def _normalized(source, *, spectral_width=2000.0, points=4):
                 label="H1",
                 domain="time",
                 direction="increasing",
-                reference=None,
+                reference=SimpleNamespace(
+                    observation_frequency=observation_frequency,
+                    observation_frequency_unit="MHz",
+                    offset=None,
+                    offset_unit=None,
+                    source="acquisition",
+                ),
             ),
         ),
         dimensions=("F2",),
@@ -45,10 +51,38 @@ def _normalized(source, *, spectral_width=2000.0, points=4):
             },
         ),
         provenance={"source": str(source), "format": "agilent-fid"},
-        acquisition={"spectral_width_hz": spectral_width, "dwell_time_s": 1 / spectral_width},
+        acquisition={
+            "spectral_width_hz": spectral_width,
+            "dwell_time_s": 1 / spectral_width,
+            "observation_frequency_mhz": observation_frequency,
+        },
         metadata={},
         encoding=("QSIM",),
-        diagnostics=(),
+        diagnostics=(
+            SimpleNamespace(
+                code="acquisition.note",
+                severity="info",
+                message="synthetic diagnostic",
+                context={"source": str(source)},
+            ),
+        ),
+        interop_axes=(
+            {
+                "label": "H1",
+                "unit": "s",
+                "domain": "time",
+                "direction": "increasing",
+                "reference": {
+                    "observation_frequency": 125.0,
+                    "observation_frequency_unit": "MHz",
+                    "offset": None,
+                    "offset_unit": None,
+                    "source": "acquisition",
+                },
+            },
+        ),
+        interop_domains=("time",),
+        interop_encoding=("QSIM",),
     )
 
 
@@ -116,9 +150,16 @@ def test_facade_merge_true_uses_core_stack_and_records_series(monkeypatch, tmp_p
 
     assert result.shape == (2, 4)
     assert result.meta.series_kind == "independent_acquisitions"
-    assert result.meta.series_axis_role == "experimental_parameter"
+    assert result.meta.series_axis_role == "acquisition_index"
     assert result.meta.series_coordinate == "index"
     assert result.meta.acquisition_order == (str(first), str(second))
+    assert result.meta.normalization_state == "storage-normalized"
+    assert result.meta.normalization_profile == "agilent-fid-1d-complex-v1"
+    assert len(result.meta.individual_normalization_history) == 2
+    assert result.meta.individual_normalization_history[0]["operations"][0]["name"] == "decode"
+    assert result.meta.individual_normalization_history[0]["axes"][0]["reference"]["observation_frequency"] == 125.0
+    assert result.meta.individual_normalization_history[0]["diagnostics"][0]["code"] == "acquisition.note"
+    assert result.meta.individual_normalization_history[0]["domains"] == ("time",)
     assert result.history[-1].endswith("Stacked 2 normalized Agilent acquisitions")
 
 
@@ -132,6 +173,34 @@ def test_facade_rejects_incompatible_merge_and_2d_profile(monkeypatch, tmp_path)
     _install_fake_nmrglue(monkeypatch, normalized)
 
     with pytest.raises(ValueError, match="spectral_width_hz"):
+        read_agilent_interop(first, second, merge=True)
+
+    normalized[str(second.resolve())] = _normalized(second, spectral_width=2000.0)
+    normalized[str(second.resolve())].acquisition["carrier_hz"] = 12000.0
+    normalized[str(first.resolve())].acquisition["carrier_hz"] = 11000.0
+    with pytest.raises(ValueError, match="carrier_hz"):
+        read_agilent_interop(first, second, merge=True)
+
+    normalized[str(second.resolve())] = _normalized(
+        second, observation_frequency=126.0
+    )
+    normalized[str(first.resolve())] = _normalized(
+        first, observation_frequency=125.0
+    )
+    with pytest.raises(ValueError, match="observation_frequency_mhz"):
+        read_agilent_interop(first, second, merge=True)
+
+    normalized[str(second.resolve())] = _normalized(second)
+    normalized[str(first.resolve())] = _normalized(first)
+    normalized[str(second.resolve())].acquisition["carrier_hz"] = 12000.0
+    normalized[str(first.resolve())].acquisition["carrier_hz"] = 11000.0
+    with pytest.raises(ValueError, match="carrier_hz"):
+        read_agilent_interop(first, second, merge=True)
+
+    normalized[str(second.resolve())] = _normalized(second)
+    normalized[str(first.resolve())] = _normalized(first)
+    normalized[str(second.resolve())].axes[0].reference.observation_frequency = 126.0
+    with pytest.raises(ValueError, match="interop_axes"):
         read_agilent_interop(first, second, merge=True)
 
     (tmp_path / "two_d").mkdir()
