@@ -21,6 +21,24 @@ _OPERATION_KEYS = {
 }
 
 
+def _plain(value):
+    """Convert neutral read-only mappings/diagnostics to copyable metadata."""
+    if isinstance(value, Mapping):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_plain(item) for item in value)
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    if all(hasattr(value, field) for field in ("code", "severity", "message", "context")):
+        return {
+            "code": value.code,
+            "severity": value.severity,
+            "message": value.message,
+            "context": _plain(value.context),
+        }
+    return value
+
+
 def _axis_coordinate(axis, size, dim):
     import spectrochempy as scp  # noqa: PLC0415
 
@@ -37,7 +55,7 @@ def _interop_metadata(result):
     for operation in result.applied_operations:
         if not isinstance(operation, Mapping) or not _OPERATION_KEYS <= set(operation):
             raise ValueError("normalized operation does not satisfy its schema")
-        operations.append(dict(operation))
+        operations.append(_plain(operation))
     axes = []
     for axis in result.axes:
         reference = getattr(axis, "reference", None)
@@ -69,11 +87,11 @@ def _interop_metadata(result):
         "interop_physical_dimensions": tuple(result.physical_dimensions),
         "interop_domains": tuple(result.domains),
         "interop_encoding": tuple(result.encoding),
-        "provenance": dict(result.provenance),
-        "acquisition": dict(result.acquisition),
+        "provenance": _plain(result.provenance),
+        "acquisition": _plain(result.acquisition),
         "applied_operations": tuple(operations),
-        "diagnostics": tuple(result.diagnostics),
-        "source_metadata": dict(result.metadata),
+        "diagnostics": _plain(result.diagnostics),
+        "source_metadata": _plain(result.metadata),
         "interop_axes": tuple(axes),
     }
 
